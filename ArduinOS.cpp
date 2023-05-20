@@ -3,7 +3,7 @@
  * TINBES03
  * ArduinOS
  * Student: Thijs Dregmans (1024272)
- * Version: 3.6
+ * Version: 3.7
  * Last edit: 2023-05-20
  * 
  */
@@ -33,8 +33,8 @@ EERef noOfFiles = EEPROM[0];
 
 bool readToken (char Buffer[], bool spacebreak=true);
 
-bool writeFAT (fileType file) {
-    int start = 1 + FileTypeSize * noOfFiles;
+bool writeFAT (int index, fileType file) {
+    int start = 1 + FileTypeSize * index;
 //    Serial.print("written FAT entry at ");
     Serial.println(start);
     EEPROM.put(start, file);
@@ -63,32 +63,6 @@ void help() {
     Serial.println("    kill [id]                   stops the process with processId id.");
 }
 
-
-void erase() {
-//    // clear buffer
-//    Buffer[0] = 0;
-//
-//    fileType file;
-//    // retrieve file.name
-//    while(!readToken(Buffer)) {
-//        strcpy(file.name, Buffer);
-//    }
-//        
-//    Serial.println("This is the erase function.");
-//    int index = locateFile(Buffer);
-//    if(index == -1) {
-//        return;
-//    }
-//
-//    file = readFATEntry(index);
-//    Serial.println(file.name);
-//
-//    noOfFiles--;
-//
-//    for(int i = index; i < noOfFiles; i++) {
-//        writeFAT(i, readFATEntry(i + 1));
-//    }
-}
 
 void files() {
     Serial.println("This is a list with all files:");
@@ -144,15 +118,6 @@ void wipe() {
     
     Serial.println("Try 'files' to view all files.");
 }
-void test() {
-    Serial.println("test function");
-    fileType file;
-    strcpy(file.name, Buffer);
-    file.size = 5;
-    file.start = 190;
-
-    writeFAT(file);
-}
 
 void memory() {
     // using 50 for debugging; but acctually EEPROM.length();
@@ -178,7 +143,6 @@ static commandType command[] = {
     {"resume", &resume},
     {"kill", &kill},
     {"wipe", &wipe},
-    {"test", &test},
     {"memory", &memory}
 };
 
@@ -242,7 +206,7 @@ void store() {
         // check if there is enough space
         file.start = (FATSIZE * FileTypeSize) + emptySpaceStart;
 
-        writeFAT(file);
+        writeFAT(noOfFiles, file);
         // implement error message !!!
 
         char* content;
@@ -302,11 +266,40 @@ void retrieve() {
     }
 
     Serial.print('\n');
+}
+
+void erase() {
+    // clear buffer
+    Buffer[0] = 0;
+    
+    char* filename;
+    // get filename
+    while(!readToken(Buffer)) {
+        filename = Buffer;
+    }
+
+    int index = locateFile(filename);
+    Serial.print(filename);
+
+    if (index == -1) { 
+        Serial.println(" not found");
+        return; 
+    }
+    Serial.println(" found");
+
+    fileType file = readFATEntry(index);
+
+    noOfFiles--;
+
+    for(int i = index; i < noOfFiles; i++) {
+        writeFAT(i, readFATEntry(i + 1));
+    }
+    Serial.print(filename);
+    Serial.println(" erased successfully");
     
     // clear buffer
     Buffer[0] = 0;
 }
-
     
 void setup() {
     Serial.begin(9600);
