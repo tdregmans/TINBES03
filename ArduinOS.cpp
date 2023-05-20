@@ -1,9 +1,9 @@
 /**
  * 
  * TINBES03
- * practicum3
+ * ArduinOS
  * Student: Thijs Dregmans (1024272)
- * Version: 3.5
+ * Version: 3.6
  * Last edit: 2023-05-20
  * 
  */
@@ -47,9 +47,6 @@ fileType readFATEntry (int FATEntryId) {
     return entry;
 }
 
-int locateFile(char* filename) {
-    Serial.println(filename);
-}
 
 void help() {
     Serial.println("Here is a list with all commands:");
@@ -66,38 +63,6 @@ void help() {
     Serial.println("    kill [id]                   stops the process with processId id.");
 }
 
-void retrieve() {
-    Serial.println("This is the retrieve function.");
-    // clear buffer
-    Buffer[0] = 0;
-    
-    char* filename;
-    // retrieve filename
-    while(!readToken(Buffer)) {
-        filename = Buffer;
-    }
-    Serial.println(filename);
-    
-    Serial.println("done");
-    for(int FATEntryId = 0; FATEntryId < noOfFiles; FATEntryId++) {
-        if (!strcmp(Buffer, readFATEntry(FATEntryId).name)) {
-            Serial.println(Buffer);
-            Serial.print(readFATEntry(FATEntryId).name);
-            Serial.println(" found");
-            
-
-            for (int byteId = 0; byteId < 10; byteId++) {
-                Serial.print(EEPROM.read(readFATEntry(FATEntryId).start + byteId));
-            }
-            Serial.println("printing done");
-            // clear buffer
-            Buffer[0] = 0;
-            return;
-        }
-    }
-    // clear buffer
-    Buffer[0] = 0;
-}
 
 void erase() {
 //    // clear buffer
@@ -280,7 +245,7 @@ void store() {
         writeFAT(file);
         // implement error message !!!
 
-        String content;
+        char* content;
         while (!readToken(Buffer, false)) {
             content = Buffer;
         }
@@ -299,6 +264,48 @@ void store() {
     }
 }
 
+int locateFile(char* filename) {
+    fileType file;
+
+    for(int FATEntryId = 0; FATEntryId < noOfFiles; FATEntryId++) {
+        if (!strcmp(filename, readFATEntry(FATEntryId).name)) {
+            return FATEntryId;
+        }
+    }
+    return -1;
+}
+
+void retrieve() {
+    // clear buffer
+    Buffer[0] = 0;
+    
+    char* filename;
+    // get filename
+    while(!readToken(Buffer)) {
+        filename = Buffer;
+    }
+
+    int index = locateFile(filename);
+    Serial.print(filename);
+
+    if (index == -1) { 
+        Serial.println(" not found");
+        return; 
+    }
+    Serial.println(" found");
+    Serial.println("content:");
+
+    fileType file = readFATEntry(index);
+
+    for (int i = 0; i < file.size; i++) {
+        Serial.print((char) EEPROM[file.start + i]);
+    }
+
+    Serial.print('\n');
+    
+    // clear buffer
+    Buffer[0] = 0;
+}
 
     
 void setup() {
