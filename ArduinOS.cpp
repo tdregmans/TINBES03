@@ -3,8 +3,8 @@
  * TINBES03
  * practicum3
  * Student: Thijs Dregmans (1024272)
- * Version: 3.1
- * Last edit: 2023-05-10
+ * Version: 3.5
+ * Last edit: 2023-05-20
  * 
  */
 #include <EEPROM.h>
@@ -31,11 +31,13 @@ static int FileTypeSize = sizeof(fileType);
 
 EERef noOfFiles = EEPROM[0];
 
+bool readToken (char Buffer[], bool spacebreak=true);
+
 bool writeFAT (fileType file) {
     int start = 1 + FileTypeSize * noOfFiles;
-    Serial.print("written at");
+//    Serial.print("written FAT entry at ");
     Serial.println(start);
-    EEPROM.put(0, file);
+    EEPROM.put(start, file);
 }
 
 fileType readFATEntry (int FATEntryId) {
@@ -43,6 +45,10 @@ fileType readFATEntry (int FATEntryId) {
     int addr = FileTypeSize * FATEntryId + 1;
     EEPROM.get(addr, entry);
     return entry;
+}
+
+int locateFile(char* filename) {
+    Serial.println(filename);
 }
 
 void help() {
@@ -94,7 +100,29 @@ void retrieve() {
 }
 
 void erase() {
-    Serial.println("This is the erase function.");
+//    // clear buffer
+//    Buffer[0] = 0;
+//
+//    fileType file;
+//    // retrieve file.name
+//    while(!readToken(Buffer)) {
+//        strcpy(file.name, Buffer);
+//    }
+//        
+//    Serial.println("This is the erase function.");
+//    int index = locateFile(Buffer);
+//    if(index == -1) {
+//        return;
+//    }
+//
+//    file = readFATEntry(index);
+//    Serial.println(file.name);
+//
+//    noOfFiles--;
+//
+//    for(int i = index; i < noOfFiles; i++) {
+//        writeFAT(i, readFATEntry(i + 1));
+//    }
 }
 
 void files() {
@@ -102,18 +130,18 @@ void files() {
     Serial.println("    name                        size");
     int counter = 0;
     for(int FATEntryId = 0; FATEntryId < noOfFiles; FATEntryId++) {
-        if(readFATEntry(FATEntryId).size >= 0) {
+//        if(readFATEntry(FATEntryId).size >= 0) {
             Serial.print("    ");
             Serial.print(readFATEntry(FATEntryId).name);
             Serial.print("                        ");
             Serial.println(readFATEntry(FATEntryId).size);
             counter++;
-        }
+//        }
     }
     Serial.print(counter);
     Serial.println(" result(s)");
 
-    if(counter == 0 && noOfFiles != 0) {
+    if(/*counter == 0 && */noOfFiles != 0) {
       noOfFiles = counter;
       Serial.println("EEPROM correction made.");
     }
@@ -143,6 +171,9 @@ void kill() {
     Serial.println("This is the kill function.");
 }
 void wipe() {
+    for(int i = 0; i < EEPROM.length(); i++) {
+        EEPROM[i] = 255;
+    }
     noOfFiles = 0;
     Serial.println("Memory wiped.");
     
@@ -159,6 +190,8 @@ void test() {
 }
 
 void memory() {
+    // using 50 for debugging; but acctually EEPROM.length();
+//    for(int i = 0; i < 50; i++) {
     for(int i = 0; i < EEPROM.length(); i++) {
         Serial.print(i);
         Serial.print(" - ");
@@ -186,13 +219,13 @@ static commandType command[] = {
 
 static int commandSize = sizeof(command) / sizeof(commandType);
 
-bool readToken (char Buffer[]) {
+bool readToken (char Buffer[], bool spacebreak) {
     int i = strlen(Buffer);
     char c;
     while (Serial.available()) {
         c = Serial.read();
 
-        if (c == ' ' || c == '\r' || c == '\n') {
+        if ((c == ' ' && spacebreak) || c == '\r' || c == '\n') {
             c = '\0';
             Buffer[i] = c;
             Serial.println(Buffer);
@@ -211,52 +244,54 @@ bool readToken (char Buffer[]) {
 void store() {
     // clear buffer
     Buffer[0] = 0;
+    
     if (noOfFiles >= FATSIZE) {
         Serial.println("ERROR: Too much files. Max 10.");
         Serial.println("Try 'files' to view all files.");
     }
     else {
-        // check if name already exists
-
-        
         fileType file;
-        // retrieve file.name
+        
+        // get file.name
         while(!readToken(Buffer)) {
             strcpy(file.name, Buffer);
         }
-        Serial.println(file.name);
         
-        Serial.println("done");
+        // check if name exists already !!!
+        
         // clear buffer
         Buffer[0] = 0;
         
-        // retrieve file.size
-        int buf;
+        // get file.size
         while (!readToken(Buffer)) {
-          buf = int(Buffer);
-            strcpy(file.size, Buffer);
+            file.size = atoi(Buffer);
         }
-        Serial.println(Buffer);
         
-        Serial.println(buf);
-        Serial.print("size=");
-        Serial.println(file.size);
+        // clear buffer
+        Buffer[0] = 0;
 
+        // calculate empty space to store
+        
         int emptySpaceStart = 0;
 
         // check if there is enough space
         file.start = (FATSIZE * FileTypeSize) + emptySpaceStart;
 
         writeFAT(file);
+        // implement error message !!!
+
+        String content;
+        while (!readToken(Buffer, false)) {
+            content = Buffer;
+        }
 
         for (int byteId = 0; byteId < file.size; byteId++) {
-            while (!Serial.available()) {
-                EEPROM[file.start + byteId] = Serial.read();
-            }
+            EEPROM[file.start + byteId] = content[byteId];
         }
         noOfFiles++;
 
         // print message
+        Serial.println("file stored successfully");
 
         // clear buffer
         Buffer[0] = 0;
