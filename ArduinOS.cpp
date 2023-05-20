@@ -3,11 +3,12 @@
  * TINBES03
  * ArduinOS
  * Student: Thijs Dregmans (1024272)
- * Version: 3.7
+ * Version: 4.0
  * Last edit: 2023-05-20
  * 
  */
 #include <EEPROM.h>
+//#include <RAM.h> // include the right libary
 
 #define BUFSIZE 12
 
@@ -21,15 +22,26 @@ typedef struct {
 #define FILENAMESIZE 12
 #define FATSIZE 10
 
+#define MAXIMUMVAR 25 // check value
+
 typedef struct {
     char name[FILENAMESIZE];
     int start;
     int size;
 } fileType;
 
+typedef struct {
+    byte name;
+    int processId;
+    byte type;
+    byte addr;
+    byte size;
+} varType;
+
 static int FileTypeSize = sizeof(fileType);
 
 EERef noOfFiles = EEPROM[0];
+
 
 bool readToken (char Buffer[], bool spacebreak=true);
 
@@ -300,15 +312,57 @@ void erase() {
     // clear buffer
     Buffer[0] = 0;
 }
+
+
+
+void setVar(byte name, int processId) {
+    if (noOfVars >= MAXIMUMVAR) {
+        Serial.println("Could not create another variable. Maximal reached.");
+        return;
+    }
+
+    byte type = popByte(processId);
+    int size = type;
+    if(type == STRING) {
+        size = popByte(processId);
+    }
+
+    // zoek ruimte in RAM
+
+    int addr = findFreeMemSpace(size);
+
+    varType var;
+
+    // if not enough space, give error
+    var[noOfVars].name = name;
+    var[noOfVars].processId = processId;
+    var[noOfVars].type = type;
+    var[noOfVars].addr = addr;
+    var[noOfVars].size = size;
+
+    for (int i = size - 1; i >= 0; i--) {
+        memory[addr + 1] = popByte(processId);
+    }
+    noOfVars++;
+}
+
+void testVariable() {
+    pushByte(0, 'b');
+
+    pushByte(0, CHAR);
+
+    setVar('x', 0);
+}
     
 void setup() {
     Serial.begin(9600);
-    Serial.println("ArduinoOS (Thijs Dregmans) version 2.1");
+    Serial.println("ArduinoOS (Thijs Dregmans) version 4.0");
     Serial.println("Started. Waiting for commands...");
     Serial.println("Enter 'help' for help.");
     
     Serial.print("> ");
 
+    testVariable();
 }
     
 void loop() {
