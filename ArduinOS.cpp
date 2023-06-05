@@ -3,12 +3,17 @@
  * TINBES03
  * ArduinOS
  * Student: Thijs Dregmans (1024272)
- * Version: 4.0
- * Last edit: 2023-05-20
+ * Version: 4.2
+ * Last edit: 2023-06-03
  * 
  */
+
+ // todo:
+  // gebruik F()
+  // 
 #include <EEPROM.h>
 //#include <RAM.h> // include the right libary
+#include "instruction_set.h"
 
 #define BUFSIZE 12
 
@@ -42,13 +47,14 @@ static int FileTypeSize = sizeof(fileType);
 
 EERef noOfFiles = EEPROM[0];
 
+#define noOfVars 25
 
 bool readToken (char Buffer[], bool spacebreak=true);
 
 bool writeFAT (int index, fileType file) {
     int start = 1 + FileTypeSize * index;
 //    Serial.print("written FAT entry at ");
-    Serial.println(start);
+//    Serial.println(start);
     EEPROM.put(start, file);
 }
 
@@ -91,11 +97,6 @@ void files() {
     }
     Serial.print(counter);
     Serial.println(" result(s)");
-
-    if(/*counter == 0 && */noOfFiles != 0) {
-      noOfFiles = counter;
-      Serial.println("EEPROM correction made.");
-    }
 }
 
 void freespace() {
@@ -181,6 +182,36 @@ bool readToken (char Buffer[], bool spacebreak) {
     return false;
 }
 
+bool spaceInUse(int addr) {
+    for(int FATEntryId = 0; FATEntryId < noOfFiles; FATEntryId++) {
+        fileType file;
+        file = readFATEntry(FATEntryId);
+
+        if(file.start <= addr && (file.start + file.size) > addr) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int emptySpace(int filesize) {
+    int pointer = FATSIZE * FileTypeSize;
+    int freespace = 0;
+    do {
+        if (spaceInUse(pointer)) {
+            freespace = 0;
+        }
+        else {
+            freespace++;
+        }
+        pointer++;
+        if (freespace >= filesize) {
+            return pointer - freespace;
+        }
+    } while (pointer < EEPROM.length());
+    return -1;
+}
+
 
 void store() {
     // clear buffer
@@ -198,7 +229,12 @@ void store() {
             strcpy(file.name, Buffer);
         }
         
-        // check if name exists already !!!
+        for(int FATEntryId = 0; FATEntryId < noOfFiles; FATEntryId++) {
+            if (!strcmp(file.name, readFATEntry(FATEntryId).name)) {
+                Serial.println("file exists already");
+                return;
+            }
+        }
         
         // clear buffer
         Buffer[0] = 0;
@@ -213,10 +249,15 @@ void store() {
 
         // calculate empty space to store
         
-        int emptySpaceStart = 0;
+        int emptySpaceStart = emptySpace(file.size);
+//        Serial.print("file stored at ");
+//        Serial.println(emptySpaceStart);
+        if (emptySpaceStart == -1) {
+            Serial.println("no space to store file");
+            return;
+        }
 
-        // check if there is enough space
-        file.start = (FATSIZE * FileTypeSize) + emptySpaceStart;
+        file.start = emptySpaceStart;
 
         writeFAT(noOfFiles, file);
         // implement error message !!!
@@ -313,46 +354,49 @@ void erase() {
     Buffer[0] = 0;
 }
 
-
-
-void setVar(byte name, int processId) {
-    if (noOfVars >= MAXIMUMVAR) {
-        Serial.println("Could not create another variable. Maximal reached.");
-        return;
-    }
-
-    byte type = popByte(processId);
-    int size = type;
-    if(type == STRING) {
-        size = popByte(processId);
-    }
-
-    // zoek ruimte in RAM
-
-    int addr = findFreeMemSpace(size);
-
-    varType var;
-
-    // if not enough space, give error
-    var[noOfVars].name = name;
-    var[noOfVars].processId = processId;
-    var[noOfVars].type = type;
-    var[noOfVars].addr = addr;
-    var[noOfVars].size = size;
-
-    for (int i = size - 1; i >= 0; i--) {
-        memory[addr + 1] = popByte(processId);
-    }
-    noOfVars++;
-}
-
-void testVariable() {
-    pushByte(0, 'b');
-
-    pushByte(0, CHAR);
-
-    setVar('x', 0);
-}
+//byte popByte(int id) {
+//    Serial.println(id);
+//    return 0;
+//}
+//
+//void setVar(byte name, int processId) {
+//    if (noOfVars >= MAXIMUMVAR) {
+//        Serial.println("Could not create another variable. Maximal reached.");
+//        return;
+//    }
+//
+//    byte type = popByte(processId);
+//    int size = type;
+//    if(type == STRING) {
+//        size = popByte(processId);
+//    }
+//
+//    // zoek ruimte in RAM
+//
+//    int addr = 0;//findFreeMemSpace(size);
+//
+//    varType var;
+//
+//    // if not enough space, give error
+//    var[noOfVars].name = name;
+//    var[noOfVars].processId = processId;
+//    var[noOfVars].type = type;
+//    var[noOfVars].addr = addr;
+//    var[noOfVars].size = size;
+//
+//    for (int i = size - 1; i >= 0; i--) {
+//        memory[addr + 1] = popByte(processId);
+//    }
+//    noOfVars++;
+//}
+//
+//void testVariable() {
+//    pushByte(0, 'b');
+//
+//    pushByte(0, CHAR);
+//
+//    setVar('x', 0);
+//}
     
 void setup() {
     Serial.begin(9600);
@@ -362,7 +406,7 @@ void setup() {
     
     Serial.print("> ");
 
-    testVariable();
+//    testVariable();
 }
     
 void loop() {
