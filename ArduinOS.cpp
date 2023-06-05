@@ -4,7 +4,7 @@
  * ArduinOS
  * Student: Thijs Dregmans (1024272)
  * Version: 4.2
- * Last edit: 2023-06-03
+ * Last edit: 2023-06-05
  * 
  */
 
