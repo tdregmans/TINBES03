@@ -3,8 +3,8 @@
  * TINBES03
  * ArduinOS
  * Student: Thijs Dregmans (1024272)
- * Version: 4.2
- * Last edit: 2023-06-05
+ * Version: 4.3
+ * Last edited: 2023-06-07
  * 
  */
 
@@ -12,8 +12,25 @@
   // gebruik F()
   // 
 #include <EEPROM.h>
-//#include <RAM.h> // include the right libary
+
+//#include <SDRAM.h> // include the right libary
+#include <avr/pgmspace.h>
 #include "instruction_set.h"
+
+#define MAXPROCESSES 10
+
+#define noOfVars 25
+
+#define STACKSIZE 32
+
+#define RUNNING 'r'
+#define PAUSED 'p'
+#define TERMINATED 0
+
+byte stack[STACKSIZE];
+byte sp = 0;
+
+int noOfProcesses = 0;
 
 #define BUFSIZE 12
 
@@ -43,11 +60,22 @@ typedef struct {
     byte size;
 } varType;
 
+typedef struct {
+    char name[FILENAMESIZE];
+    int processId;
+    byte state;
+    int programCounter;
+    int filePointer;
+    int stackPointer;
+} processType;
+
+processType processes[MAXPROCESSES];
+
+
 static int FileTypeSize = sizeof(fileType);
 
 EERef noOfFiles = EEPROM[0];
 
-#define noOfVars 25
 
 bool readToken (char Buffer[], bool spacebreak=true);
 
@@ -99,12 +127,74 @@ void files() {
     Serial.println(" result(s)");
 }
 
+bool spaceInUse(int addr) {
+    for(int FATEntryId = 0; FATEntryId < noOfFiles; FATEntryId++) {
+        fileType file;
+        file = readFATEntry(FATEntryId);
+
+        if(file.start <= addr && (file.start + file.size) > addr) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int emptySpace(int filesize) {
+    int pointer = FATSIZE * FileTypeSize;
+    int freespace = 0;
+    do {
+        if (spaceInUse(pointer)) {
+            freespace = 0;
+        }
+        else {
+            freespace++;
+        }
+        pointer++;
+        if (freespace >= filesize) {
+            return pointer - freespace;
+        }
+    } while (pointer < EEPROM.length());
+    return -1;
+}
+
 void freespace() {
-    Serial.println("This is the freespace function.");
+    int maxSize = 0;
+    while(emptySpace(maxSize) != -1) {
+        maxSize++;
+    }
+    Serial.print("The biggest contiguous free memmory space is ");
+    Serial.print(maxSize);
+    Serial.println(" bytes.");
 }
 
 void run() {
-    Serial.println("This is the run function.");
+    // clear buffer
+    Buffer[0] = 0;
+    
+    if (noOfProcesses >= MAXPROCESSES) {
+        Serial.println("ERROR: Too much processes. Max 10.");
+        Serial.println("Try 'list' to view all processes.");
+    }
+    else {
+        char filename[12];
+        // get file.name
+        while(!readToken(Buffer)) {
+            strcpy(filename, Buffer);
+        }
+
+        Serial.println(filename);
+        // start process
+        fileType file = readFATEntry(locateFile(filename));
+        processType process;
+        memcpy(filename, process.name, sizeof(filename));
+        process.state = RUNNING;
+        process.processId = noOfProcesses;
+        process.programCounter = 0; // may change later
+        process.filePointer = 0; // may change later
+        process.stackPointer = 0;
+
+        processes[noOfProcesses++] = process;
+    }
 }
 
 void list() {
@@ -181,37 +271,6 @@ bool readToken (char Buffer[], bool spacebreak) {
     Buffer[i+1] = '\0';
     return false;
 }
-
-bool spaceInUse(int addr) {
-    for(int FATEntryId = 0; FATEntryId < noOfFiles; FATEntryId++) {
-        fileType file;
-        file = readFATEntry(FATEntryId);
-
-        if(file.start <= addr && (file.start + file.size) > addr) {
-            return true;
-        }
-    }
-    return false;
-}
-
-int emptySpace(int filesize) {
-    int pointer = FATSIZE * FileTypeSize;
-    int freespace = 0;
-    do {
-        if (spaceInUse(pointer)) {
-            freespace = 0;
-        }
-        else {
-            freespace++;
-        }
-        pointer++;
-        if (freespace >= filesize) {
-            return pointer - freespace;
-        }
-    } while (pointer < EEPROM.length());
-    return -1;
-}
-
 
 void store() {
     // clear buffer
@@ -354,21 +413,56 @@ void erase() {
     Buffer[0] = 0;
 }
 
-//byte popByte(int id) {
-//    Serial.println(id);
-//    return 0;
+//void pushByte(byte b) {
+//    stack[sp++] = b;
 //}
 //
+//byte popByte() {
+//    return stack[--sp];
+//}
+//
+//byte readVal(int index, int filePointer, byte Type) {
+//    for (byte i = 0; i < Type; i++) {
+//        pushByte(index, EEPROM[filePointer++]);
+//    }
+//    pushByte(index, Type);
+//    return Type;
+//}
+//
+//void execute(int index) {
+//    switch (EEPROM[process[index].pc++]) {
+//        case CHAR:
+//            process[index].pc = readVal(index, process[index].pc, EEPROM[process[index].pc -1]);
+//            break;
+//        case INT:
+//            process[index].pc = readVal(index, process[index].pc, EEPROM[process[index].pc -1]);
+//            break;
+//        case FLOAT:
+//            process[index].pc = readVal(index, process[index].pc, EEPROM[process[index].pc -1]);
+//            break;
+//        default:
+//            Serial.print("Could not find the command ");
+//            Serial.println(EEPROM[process[index].pc]);
+//            break;
+//    }
+//}
+//
+//void runProcess() {
+//    for (int i = 0; i < noOfFiles; i++) {
+//        execute(i);
+//    }
+//}
+
 //void setVar(byte name, int processId) {
 //    if (noOfVars >= MAXIMUMVAR) {
 //        Serial.println("Could not create another variable. Maximal reached.");
 //        return;
 //    }
 //
-//    byte type = popByte(processId);
+////    byte type = popByte(processId);
 //    int size = type;
 //    if(type == STRING) {
-//        size = popByte(processId);
+////        size = popByte(processId);
 //    }
 //
 //    // zoek ruimte in RAM
@@ -385,7 +479,7 @@ void erase() {
 //    var[noOfVars].size = size;
 //
 //    for (int i = size - 1; i >= 0; i--) {
-//        memory[addr + 1] = popByte(processId);
+////        memory[addr + 1] = popByte(processId);
 //    }
 //    noOfVars++;
 //}
