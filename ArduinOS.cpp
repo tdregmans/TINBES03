@@ -3,7 +3,7 @@
  * TINBES03
  * ArduinOS
  * Student: Thijs Dregmans (1024272)
- * Version: 4.4
+ * Version: 5.0
  * Last edited: 2023-06-08
  * 
  */
@@ -16,6 +16,8 @@
 //#include <SDRAM.h> // include the right libary
 #include <avr/pgmspace.h>
 #include "instruction_set.h"
+#include <IEEE754tools.h>
+
 
 #define MAXPROCESSES 10
 
@@ -45,6 +47,10 @@ typedef struct {
 
 #define MAXIMUMVAR 25 // check value
 
+#define MEMORYSIZE 256
+
+byte memory[MEMORYSIZE];
+
 typedef struct {
     char name[FILENAMESIZE];
     int start;
@@ -59,12 +65,17 @@ typedef struct {
     byte size;
 } varType;
 
+varType memoryTable[MAXIMUMVAR];
+
+
 typedef struct {
     char name[FILENAMESIZE];
     int processId;
     byte state;
     int pc;
+    int fp;
     int sp;
+    byte stack[STACKSIZE];
 } processType;
 
 processType process[MAXPROCESSES];
@@ -328,26 +339,6 @@ void kill() {
     Buffer[0] = 0;
 }
 
-void wipe() {
-    for(int i = 0; i < EEPROM.length(); i++) {
-        EEPROM[i] = 255;
-    }
-    noOfFiles = 0;
-    Serial.println("Memory wiped.");
-    
-    Serial.println("Try 'files' to view all files.");
-}
-
-void memory() {
-    // using 50 for debugging; but acctually EEPROM.length();
-//    for(int i = 0; i < 50; i++) {
-    for(int i = 0; i < EEPROM.length(); i++) {
-        Serial.print(i);
-        Serial.print(" - ");
-        Serial.println(EEPROM[i]);
-    }
-}
-
  
 static commandType command[] = {
     {"help", &help},
@@ -360,9 +351,7 @@ static commandType command[] = {
     {"list", &list},
     {"suspend", &suspend},
     {"resume", &resume},
-    {"kill", &kill},
-    {"wipe", &wipe},
-    {"memory", &memory}
+    {"kill", &kill}
 };
 
 static int commandSize = sizeof(command) / sizeof(commandType);
@@ -529,20 +518,38 @@ void erase() {
     Buffer[0] = 0;
 }
 
-void pushByte(byte b) {
-    stack[sp++] = b;
-}
-
 void pushByte(int index, byte b) {
-    stack[sp++] = b;
-}
-
-byte popByte() {
-    return stack[--sp];
+    process[index].stack[process[index].sp++] = b;
 }
 
 byte popByte(int index) {
-    return stack[--sp];
+    return process[index].stack[process[index].sp--];
+    // check if decrement operator must be pre or post 'sp'
+}
+
+float popVal(int index) {
+    // assume that a variable of type INT, FLOAT or CHAR is on stack
+
+    byte type = popByte(index);
+    switch (type) {
+        case INT:
+            // read 2 bytes -> big-endian
+            byte byte1 = popByte(index);
+            byte byte2 = popByte(index);
+
+            return byte1 + (byte2 * 265);
+        case FLOAT:
+            // read 4 bytes
+            byte bytes[FLOAT];
+            for (int i = 0; i < FLOAT; i++) {
+                bytes[i] = popByte(index);
+            }
+
+            return doublePacked2Float(bytes);
+        case CHAR:
+            // read 1 byte
+            return popByte(index);
+    }
 }
 
 byte readVal(int index, int filePointer, byte Type) {
@@ -551,6 +558,47 @@ byte readVal(int index, int filePointer, byte Type) {
     }
     pushByte(index, Type);
     return Type;
+}
+
+byte readStr(int index, int fp) {
+    // read # of bytes, associated with a process
+    // defined by processId: index
+
+    // push it on stack
+
+    byte size = 0;
+
+    do {
+        pushByte(index, EEPROM[fp]);
+        size++;
+    } while(EEPROM[fp++]);
+    pushByte(index, size);
+    pushByte(index, STRING);
+
+    return size;
+}
+
+void binaryOp(int index, int op) {
+    float y = popVal(index);
+    float x = popVal(index);
+    float result;
+    switch (op) {
+        case PLUS:
+            result = x + y;
+            break;
+        case MINUS:
+            result = x - y;
+            break;
+        case TIMES:
+            result = x * y;
+            break;
+        default:
+            Serial.println("ERROR");
+            Serial.println("binaryOp can only be called with a known operator");
+            break;
+    }
+    // push result on the stack
+    
 }
 
 void execute(int index) {
@@ -564,6 +612,18 @@ void execute(int index) {
         case FLOAT:
             process[index].pc = readVal(index, process[index].pc, EEPROM[process[index].pc -1]);
             break;
+        case STRING:
+            process[index].pc += readStr(index, process[index].pc);
+            break;
+        case PLUS:
+            binaryOp(index, EEPROM[process[index].pc -1]);
+            break;
+        case MINUS:
+            binaryOp(index, EEPROM[process[index].pc -1]);
+            break;
+        case TIMES:
+            binaryOp(index, EEPROM[process[index].pc -1]);
+            break;
         default:
             Serial.print("Could not find the command ");
             Serial.println(EEPROM[process[index].pc]);
@@ -576,45 +636,6 @@ void runProcess() {
         execute(i);
     }
 }
-
-void setVar(byte name, int processId) {
-    if (noOfVars >= MAXIMUMVAR) {
-        Serial.println("Could not create another variable. Maximal reached.");
-        return;
-    }
-
-    byte type = popByte(processId);
-    int size = type;
-    if(type == STRING) {
-//        size = popByte(processId);
-    }
-
-    // zoek ruimte in RAM
-
-    int addr = 0;//findFreeMemSpace(size);
-
-    varType var[MAXIMUMVAR];
-
-    // if not enough space, give error
-    var[noOfVars].name = name;
-    var[noOfVars].processId = processId;
-    var[noOfVars].type = type;
-    var[noOfVars].addr = addr;
-    var[noOfVars].size = size;
-
-    for (int i = size - 1; i >= 0; i--) {
-//        memory[addr + 1] = popByte(processId);
-    }
-    noOfVars++;
-}
-
-//void testVariable() {
-//    pushByte(0, 'b');
-//
-//    pushByte(0, CHAR);
-//
-//    setVar('x', 0);
-//}
     
 void setup() {
     Serial.begin(9600);
@@ -623,8 +644,6 @@ void setup() {
     Serial.println("Enter 'help' for help.");
     
     Serial.print("> ");
-
-//    testVariable();
 }
     
 void loop() {
