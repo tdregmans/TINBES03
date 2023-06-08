@@ -3,8 +3,8 @@
  * TINBES03
  * ArduinOS
  * Student: Thijs Dregmans (1024272)
- * Version: 4.3
- * Last edited: 2023-06-07
+ * Version: 4.4
+ * Last edited: 2023-06-08
  * 
  */
 
@@ -220,16 +220,14 @@ void run() {
 
 void list() {
     Serial.println("This is a list with all processes:");
-    Serial.println("    name      state       pc");
+    Serial.println("    processId     name          state");
     for(int processId = 0; processId < noOfProcesses; processId++) {
-//        if(readFATEntry(FATEntryId).size >= 0) {
-            Serial.print("    ");
-            Serial.print(process[processId].name);
-            Serial.print("      ");
-            Serial.print((char) process[processId].state);
-            Serial.print("      ");
-            Serial.println(process[processId].pc);
-//        }
+        Serial.print("    ");
+        Serial.print(process[processId].processId);
+        Serial.print("             ");
+        Serial.print(process[processId].name);
+        Serial.print("     ");
+        Serial.println((char) process[processId].state);
     }
     Serial.print(noOfProcesses);
     Serial.println(" result(s)");
@@ -241,10 +239,13 @@ void suspend() {
     
     // get processId
     int processId;
-    while(!readToken(Buffer)) {
-        strcpy(processId, Buffer);
+    while (!readToken(Buffer)) {
+        processId = atoi(Buffer);
     }
-    Serial.println((int) processId);
+
+    // clear buffer
+    Buffer[0] = 0;
+    
     if(processId >= 0 && processId < noOfProcesses) {
         if(process[processId].state == RUNNING) {
             process[processId].state = PAUSED;
@@ -262,8 +263,6 @@ void suspend() {
         Serial.println("ERROR");
     }
     
-    // SOMETHING GOES WRONG: ALWAYS PROCESSID 0 IS STOPPED !!!!
-    
     // clear buffer
     Buffer[0] = 0;
 }
@@ -274,10 +273,13 @@ void resume() {
     
     // get processId
     int processId;
-    while(!readToken(Buffer)) {
-        strcpy(processId, Buffer);
+    while (!readToken(Buffer)) {
+        processId = atoi(Buffer);
     }
-    Serial.println((int) processId);
+
+    // clear buffer
+    Buffer[0] = 0;
+       
     if(processId >= 0 && processId < noOfProcesses) {
         if(process[processId].state == PAUSED) {
             process[processId].state = RUNNING;
@@ -295,8 +297,6 @@ void resume() {
         Serial.println("ERROR");
     }
     
-    // SOMETHING GOES WRONG: ALWAYS PROCESSID 0 IS RESTARTED !!!!
-    
     // clear buffer
     Buffer[0] = 0;
 }
@@ -307,10 +307,13 @@ void kill() {
     
     // get processId
     int processId;
-    while(!readToken(Buffer)) {
-        strcpy(processId, Buffer);
+    while (!readToken(Buffer)) {
+        processId = atoi(Buffer);
     }
-    Serial.println((int) processId);
+
+    // clear buffer
+    Buffer[0] = 0;
+    
     if(processId >= 0 && processId < noOfProcesses) {
         process[processId].state = TERMINATED;
         Serial.print("Process ");
@@ -321,11 +324,10 @@ void kill() {
         Serial.println("ERROR");
     }
     
-    // SOMETHING GOES WRONG: ALWAYS PROCESSID 0 IS TERMINATED !!!!
-    
     // clear buffer
     Buffer[0] = 0;
 }
+
 void wipe() {
     for(int i = 0; i < EEPROM.length(); i++) {
         EEPROM[i] = 255;
