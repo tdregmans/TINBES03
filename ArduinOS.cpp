@@ -3,8 +3,8 @@
  * TINBES03
  * ArduinOS
  * Student: Thijs Dregmans (1024272)
- * Version: 5.1
- * Last edited: 2023-06-08
+ * Version: 5.2
+ * Last edited: 2023-06-09
  * 
  * Requirements:
  *    Het besturingssysteem
@@ -152,8 +152,6 @@ void store() {
         // calculate empty space to store
         
         int emptySpaceStart = emptySpace(file.size);
-//        Serial.print("file stored at ");
-//        Serial.println(emptySpaceStart);
         if (emptySpaceStart == -1) {
             Serial.println("no space to store file");
             return;
@@ -179,7 +177,6 @@ void store() {
 
         // clear buffer
         Buffer[0] = 0;
-        
     }
 }
 
@@ -506,6 +503,8 @@ int emptySpace(int filesize) {
     return -1;
 }
 
+// Function: readToken
+// Used to read a token from the buffer, enabling the program to have non-blocking input
 bool readToken (char Buffer[], bool spacebreak) {
     int i = strlen(Buffer);
     char c;
@@ -556,15 +555,21 @@ int locateFile(char* filename) {
     return -1;
 }
 
+// Function: pushByte
+// Pushes one byte on the stack of a process
 void pushByte(int index, byte b) {
     process[index].stack[process[index].sp++] = b;
 }
 
+// Function: popByte
+// Pops one byte from the stack of a process
 byte popByte(int index) {
     return process[index].stack[process[index].sp--];
     // check if decrement operator must be pre or post 'sp'
 }
 
+// Function: popVal
+// Pops the CHAR, INT or FLOAT from the stack of a process
 float popVal(int index) {
     // assume that a variable of type INT, FLOAT or CHAR is on stack
 
@@ -590,14 +595,18 @@ float popVal(int index) {
     }
 }
 
+// Function: readVal
+// Reads a value from the EEPROM and pushes it on the stack
 byte readVal(int index, int filePointer, byte Type) {
     for (byte i = 0; i < Type; i++) {
-        pushByte(index, EEPROM[filePointer++]);
+        pushByte(index, EEPROM[filePointer++]); // does this increment the local variable or the value in the struct !?!?!
     }
     pushByte(index, Type);
     return Type;
 }
 
+// Function: readStr
+// Reads a string from the EEPROM and pushes it on the stack
 byte readStr(int index, int fp) {
     // read # of bytes, associated with a process
     // defined by processId: index
@@ -616,6 +625,8 @@ byte readStr(int index, int fp) {
     return size;
 }
 
+// Function: binaryOp
+// Perform a binary operation and push results on the stack
 void binaryOp(int index, int op) {
     float y = popVal(index);
     float x = popVal(index);
@@ -680,7 +691,9 @@ void runProcess() {
         }
     }
 }
-    
+
+// Function: setup
+// Called by Arduino to start program
 void setup() {
     Serial.begin(9600);
     Serial.println("ArduinoOS (Thijs Dregmans) version 4.0");
@@ -689,7 +702,9 @@ void setup() {
     
     Serial.print("> ");
 }
-    
+
+// Function: loop
+// Called by Arduino repeatedly to run the program
 void loop() {
     if (readToken(Buffer)) {
         bool oneCalled = false;
