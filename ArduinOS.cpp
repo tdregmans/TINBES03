@@ -3,7 +3,7 @@
    TINBES03
    ArduinOS
    Student: Thijs Dregmans (1024272)
-   Version: 5.3
+   Version: 5.4
    Last edited: 2023-06-09
 
    Requirements:
@@ -27,6 +27,10 @@
       - Create universal error messages
       - Make Command Line output universal
       - Provide comentary in functions
+
+   Extra points:
+      - Prioritize certain processes
+      - Shared memory between processes
 */
 
 // Include libaries
@@ -464,7 +468,9 @@ static commandType command[] = {
   {"list", &list},
   {"suspend", &suspend},
   {"resume", &resume},
-  {"kill", &kill}
+  {"kill", &kill},
+  {"test", &test},
+  {"reset", &factoryReset}
 };
 
 static int commandSize = sizeof(command) / sizeof(commandType);
@@ -727,88 +733,144 @@ int memoryEmptySpace(int varsize) {
 }
 
 void saveVariable(byte name, int processId) {
-    if (noOfVars >= MAXIMUMVAR) {
-        Serial.println("ERROR: Too much variables. Max 25.");
-        Serial.println("Try 'list' to view all processes.");
-        Serial.println("Kill a process that uses a variable to get access to one.");
+  if (noOfVars >= MAXIMUMVAR) {
+    Serial.println("ERROR: Too much variables. Max 25.");
+    Serial.println("Try 'list' to view all processes.");
+    Serial.println("Kill a process that uses a variable to get access to one.");
+  }
+  else {
+    // delete var
+    for (int varId = 0; varId < noOfVars; varId++) {
+      if (memoryTable[varId].name == name && memoryTable[varId].processId == processId) {
+        for (int i = varId; i < noOfVars; i++) {
+          memoryTable[i] = memoryTable[i + 1];
+        }
+        noOfVars--;
+        break;
+      }
+    }
+    // (re)create var
+    varType var;
+    var.name = name;
+    var.processId = processId;
+    var.type = popByte(processId);
+    if (var.type == CHAR || var.type == INT || var.type == FLOAT) {
+      var.size = var.type;
     }
     else {
-        // delete var
-        for (int varId = 0; varId < noOfVars; varId++) {
-            if (memoryTable[varId].name == name && memoryTable[varId].processId == processId) {
-                for (int i = varId; i < noOfVars; i++) {
-                    memoryTable[i] = memoryTable[i + 1];
-                }
-                noOfVars--;
-                break;
-            }
-        }
-        // (re)create var
-        varType var;
-        var.name = name;
-        var.processId = processId;
-        var.type = popByte(processId);
-        if (var.type == CHAR || var.type == INT || var.type == FLOAT) {
-            var.size = var.type;
-        }
-        else {
-            // pop size of STRING from stack
-            var.size = popByte(processId);
-        }
-        // find empty space in memory to put variable
-        int emptySpaceStart = memoryEmptySpace(var.size);
-        if (emptySpaceStart == -1) {
-            Serial.println("no space to store variable");
-            return;
-        }
-    
-        var.start = emptySpaceStart;
-
-        for (int byteId = 0; byteId < var.size; byteId++) {
-            memory[var.start + byteId] = popByte(processId);
-        }
-        memoryTable[noOfVars++] = var;
+      // pop size of STRING from stack
+      var.size = popByte(processId);
     }
+    // find empty space in memory to put variable
+    int emptySpaceStart = memoryEmptySpace(var.size);
+    if (emptySpaceStart == -1) {
+      Serial.println("no space to store variable");
+      return;
+    }
+
+    var.start = emptySpaceStart;
+
+    for (int byteId = 0; byteId < var.size; byteId++) {
+      memory[var.start + byteId] = popByte(processId);
+    }
+    memoryTable[noOfVars++] = var;
+  }
 }
 
 int readVariable(byte name, int processId) {
-    // read variable from memory and push it on the stack
-    // return 0 -> pushed successfully
-    // return 1 -> error
-    for (int varId = 0; varId < noOfVars; varId++) {
-        varType var = memoryTable[varId];
-        if (var.name == name && var.processId == processId) {
-            if (var.type == CHAR || var.type == INT || var.type == FLOAT) {
-                for (int byteId = 0; byteId < var.size; byteId++) {
-                    pushByte(processId, memory[var.start + byteId]);
-                    // May need to be reversed: BIG OR LITTLE ENDIAN !?!?!
-                }
-            }
-            else {
-                // assume: var.type == STRING
-                for (int byteId = 0; byteId < var.size; byteId++) {
-                    pushByte(processId, memory[var.start + byteId]);
-                    // May need to be reversed: BIG OR LITTLE ENDIAN !?!?!
-                }
-                pushByte(processId, var.size);
-            }
-            pushByte(processId, var.type);
-            return 0;
+  // read variable from memory and push it on the stack
+  // return 0 -> pushed successfully
+  // return 1 -> error
+  for (int varId = 0; varId < noOfVars; varId++) {
+    varType var = memoryTable[varId];
+    if (var.name == name && var.processId == processId) {
+      if (var.type == CHAR || var.type == INT || var.type == FLOAT) {
+        for (int byteId = 0; byteId < var.size; byteId++) {
+          pushByte(processId, memory[var.start + byteId]);
+          // May need to be reversed: BIG OR LITTLE ENDIAN !?!?!
         }
+      }
+      else {
+        // assume: var.type == STRING
+        for (int byteId = 0; byteId < var.size; byteId++) {
+          pushByte(processId, memory[var.start + byteId]);
+          // May need to be reversed: BIG OR LITTLE ENDIAN !?!?!
+        }
+        pushByte(processId, var.size);
+      }
+      pushByte(processId, var.type);
+      return 0;
     }
-    Serial.println("ERROR! Could not find variable.");
-    return 1;
+  }
+  Serial.println("ERROR! Could not find variable.");
+  return 1;
 }
 
 void deleteVariables(int processId) {
-    for (int varId = 0; varId < noOfVars; varId++) {
-        if (memoryTable[varId].processId == processId) {
-            for (int i = varId; i < noOfVars; i++) {
-                memoryTable[i] = memoryTable[i + 1];
-            }
-            noOfVars--;
-        }
+  for (int varId = 0; varId < noOfVars; varId++) {
+    if (memoryTable[varId].processId == processId) {
+      for (int i = varId; i < noOfVars; i++) {
+        memoryTable[i] = memoryTable[i + 1];
+      }
+      noOfVars--;
     }
+  }
+}
+
+void test() {
+    testVars(0);
+}
+
+void testVars(int processId) {
+  Serial.println("execute var test");
+  printStack(processId);
+  // test CHAR
+  pushByte(processId, 'x');
+  pushByte(processId, CHAR);
+
+  saveVariable('a', processId);
+
+  // test INT
+  pushByte(processId, 0x00);
+  pushByte(processId, 0x16);
+  pushByte(processId, INT);
+
+  saveVariable('b', processId);
+
+  // test FLOAT
+  pushByte(processId, 0x00);
+  pushByte(processId, 0x16);
+  pushByte(processId, 0x00);
+  pushByte(processId, 0x16);
+  pushByte(processId, FLOAT);
+
+  saveVariable('c', processId);
+
+  // test STRING
+  pushByte(processId, 0x00);
+  pushByte(processId, 'c');
+  pushByte(processId, 'b');
+  pushByte(processId, 'a');
+  pushByte(processId, 3);
+
+  pushByte(processId, STRING);
+
+  saveVariable('d', processId);
+
+  // test retrieving variables
+}
+
+void printStack(int processId) {
+  for (int byteId = 0; byteId < STACKSIZE; byteId++) {
+    Serial.println(process[processId].stack[byteId]);
+  }
+}
+
+void factoryReset() {
+    for (int i = 0; i < EEPROM.length(); i++) {
+        EEPROM[i] = 255;
+    }
+    Serial.println("erased whole EEPROM");
 }
 
 // Function: setup
@@ -842,4 +904,5 @@ void loop() {
 
     Serial.print("> ");
   }
+  //    runProcess();
 }
