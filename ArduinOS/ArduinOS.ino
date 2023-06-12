@@ -442,13 +442,8 @@ void kill() {
   // clear buffer
   Buffer[0] = 0;
 
-  if (processId >= 0 && processId < noOfProcesses) {
-    process[processId].state = TERMINATED;
-    Serial.print("Process ");
-    Serial.print(processId);
-    Serial.println(" terminated successfully.");
-
-    // !!!! delete all variables of the process !!!!
+  if (processId >= 0 && processId <= MAXPROCESSES) {
+    terminateProcess(processId);
   }
   else {
     Serial.println("ERROR");
@@ -751,7 +746,7 @@ void printStack(int index) {
             break;
         case STRING:
             Serial.print(popString(index));
-            break;
+            break;  
         default:
             Serial.print("Could not print the value on the stack: ");
             Serial.println(process[index].stack[process[index].sp + 1]);
@@ -762,6 +757,17 @@ void printStack(int index) {
 void printlnStack(int index) {
     printStack(index);
     Serial.println();
+}
+
+void terminateProcess(int processId) {
+    process[processId].state = TERMINATED;
+    Serial.print("Process ");
+    Serial.print(processId);
+    Serial.println(" terminated successfully.");
+
+    // Delete all variables of the process
+    deleteVariables(processId);
+    
 }
 
 // Function: execute
@@ -802,6 +808,7 @@ void execute(int index) {
       printlnStack(index);
       break;
     case STOP:
+      terminateProcess(index);
       break;
     default:
       Serial.print("Could not find the command ");
