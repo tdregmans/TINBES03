@@ -828,6 +828,11 @@ void decrement(int index) {
   pushVal(index, popVal(index) - 1, process[index].stack[process[index].sp + 1]); // check for errors pls
 }
 
+void delayTime(int index) {
+    int miliseconds = popVal(index);
+    delay(miliseconds);
+}
+
 // Function: execute
 // Executes the next step of the process
 void execute(int index) {
@@ -879,6 +884,9 @@ void execute(int index) {
       break;
     case STOP:
       terminateProcess(index);
+      break;
+    case DELAY:
+      delayTime(index);
       break;
     default:
       Serial.print("Could not find the command ");
