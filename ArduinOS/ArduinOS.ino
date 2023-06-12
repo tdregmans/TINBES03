@@ -253,13 +253,13 @@ void files() {
   Serial.println("    name                        size");
   int counter = 0;
   for (int FATEntryId = 0; FATEntryId < noOfFiles; FATEntryId++) {
-    //        if(readFATEntry(FATEntryId).size >= 0) {
+            if(readFATEntry(FATEntryId).size >= 0) {
     Serial.print("    ");
     Serial.print(readFATEntry(FATEntryId).name);
     Serial.print("                        ");
     Serial.println(readFATEntry(FATEntryId).size);
     counter++;
-    //        }
+            }
   }
   Serial.print(counter);
   Serial.println(" result(s)");
@@ -452,6 +452,10 @@ void kill() {
   Buffer[0] = 0;
 }
 
+void wipe() {
+    noOfFiles = 0;
+}
+
 // Array with callable commands
 static commandType command[] = {
   {"help", &help},
@@ -464,7 +468,8 @@ static commandType command[] = {
   {"list", &list},
   {"suspend", &suspend},
   {"resume", &resume},
-  {"kill", &kill}
+  {"kill", &kill},
+  {"wipe", &wipe}
 };
 
 static int commandSize = sizeof(command) / sizeof(commandType);
@@ -815,15 +820,15 @@ void deleteVariables(int processId) {
 // Called by Arduino to start program
 void setup() {
   Serial.begin(9600);
-  Serial.println("ArduinoOS (Thijs Dregmans) version 4.0");
-  Serial.println("Started. Waiting for commands...");
-  Serial.println("Enter 'help' for help.");
-
+//  Serial.println("ArduinoOS (Thijs Dregmans) version 4.0");
+//  Serial.println("Started. Waiting for commands...");
+//  Serial.println("Enter 'help' for help.");
+//
   Serial.print("> ");
 }
 
 // Function: loop
-// Called by Arduino repeatedly to run the program
+// Called by Arduino repeatedly to run the program  
 void loop() {
   if (readToken(Buffer)) {
     bool oneCalled = false;
