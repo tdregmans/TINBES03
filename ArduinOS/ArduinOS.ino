@@ -224,13 +224,13 @@ void erase() {
   }
 
   int index = locateFile(filename);
-  Serial.print(filename);
+//  Serial.print(filename);
 
   if (index == -1) {
-    Serial.println(" not found");
+//    Serial.println(" not found");
     return;
   }
-  Serial.println(" found");
+//  Serial.println(" found");
 
   fileType file = readFATEntry(index);
 
@@ -519,7 +519,7 @@ bool readToken (char Buffer[], bool spacebreak) {
     if ((c == ' ' && spacebreak) || c == '\r' || c == '\n') {
       c = '\0';
       Buffer[i] = c;
-      Serial.println(Buffer);
+//      Serial.println(Buffer);
 
       return true;
     }
@@ -813,6 +813,14 @@ void deleteVariables(int processId) {
             }
             noOfVars--;
         }
+    }
+}
+
+void clearSerialBuffer() {
+    delayMicroseconds(1024);
+    while (Serial.available()) {
+        Serial.read();
+        delayMicroseconds(1024);
     }
 }
 
