@@ -610,13 +610,53 @@ float popVal(int index) {
   }
 }
 
-void pushInt(int index, int integer) {
-    byte byte1 = lowByte(integer);
-    byte byte2 = highByte(integer);
+void pushInt(int index, int i) {
+    byte byte1 = lowByte(i);
+    byte byte2 = highByte(i);
 
     pushByte(index, byte1);
     pushByte(index, byte2);
     pushByte(index, INT);
+}
+
+void pushFloat(int index, float f) {
+    byte byte1 = 0x00;
+    byte byte2 = 0x00;
+    byte byte3 = 0x00;
+    byte byte4 = 0x00;
+
+    // apply IEEE-754 protocol
+    pushByte(index, byte1);
+    pushByte(index, byte2);
+    pushByte(index, byte3);
+    pushByte(index, byte4);
+    
+    pushByte(index, FLOAT);
+}
+
+void pushVal(int index, float value, int type) {
+    switch (type) {
+        case INT:
+          pushInt(index, (int) value);
+          break;
+        case FLOAT:
+          pushFloat(index, value);
+          break;
+        default:
+          Serial.println("ERROR");
+          break;
+    }
+}
+
+// function may not be needed
+void pushString(int index, char* s) {
+    int size = sizeof(s);
+    for(int i = size; i == 0; i--) {
+        pushByte(index, s[i]);
+    }
+    
+    pushByte(index, size);
+    pushByte(index, STRING);
 }
 
 char* popString(int index) {
@@ -770,6 +810,24 @@ void terminateProcess(int processId) {
     
 }
 
+void get(int index) {
+  char name = EEPROM[process[index].pc++];
+  readVariable(name, index);
+}
+
+void set(int index) {
+  char name = EEPROM[process[index].pc++];
+  saveVariable(name, index);
+}
+
+void increment(int index) {
+  pushVal(index, popVal(index) + 1, process[index].stack[process[index].sp + 1]); // check for errors pls
+}
+
+void decrement(int index) {
+  pushVal(index, popVal(index) - 1, process[index].stack[process[index].sp + 1]); // check for errors pls
+}
+
 // Function: execute
 // Executes the next step of the process
 void execute(int index) {
@@ -794,6 +852,18 @@ void execute(int index) {
       break;
     case TIMES:
       binaryOp(index, EEPROM[process[index].pc - 1]);
+      break;
+    case GET:
+      get(index);
+      break;
+    case SET:
+      set(index);
+      break;
+    case INCREMENT:
+      increment(index);
+      break;
+    case DECREMENT:
+      decrement(index);
       break;
     case FORK:
       fork(index);
