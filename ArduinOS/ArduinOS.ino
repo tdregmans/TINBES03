@@ -3,7 +3,7 @@
    TINBES03
    ArduinOS
    Student: Thijs Dregmans (1024272)
-   Version: 5.3
+   Version: 5.5
    Last edited: 2023-06-09
 
    Requirements:
@@ -111,6 +111,7 @@ void help() {
   Serial.println(F("    suspend [id]                pauzes the process with processId id."));
   Serial.println(F("    resume [id]                 continues the process with processId id."));
   Serial.println(F("    kill [id]                   stops the process with processId id."));
+  Serial.println(F("    reboot                      reboots the OS."));
 }
 
 // Callable command: store [file] [size] [data]
@@ -224,13 +225,13 @@ void erase() {
   }
 
   int index = locateFile(filename);
-//  Serial.print(filename);
+  Serial.print(filename);
 
   if (index == -1) {
-//    Serial.println(" not found");
+    Serial.println(" not found");
     return;
   }
-//  Serial.println(" found");
+  Serial.println(" found");
 
   fileType file = readFATEntry(index);
 
@@ -288,7 +289,12 @@ void run() {
     Serial.println("Try 'list' to view all processes.");
   }
   else {
-    int processId = noOfProcesses;
+    int processId = findFreeProcess();
+    if (processId == -1) {
+        Serial.println("ERROR. Max no of processes reached. Max 10.");
+        return;
+    }
+    
     process[processId].processId = processId;
 
     // get file.name
@@ -452,6 +458,14 @@ void kill() {
   Buffer[0] = 0;
 }
 
+void(* resetFunc) (void) = 0;  // declare reset fuction at address 0
+
+void reboot() {
+    delay(10);
+    resetFunc(); //call reset
+
+}
+
 void wipe() {
     noOfFiles = 0;
 }
@@ -469,7 +483,8 @@ static commandType command[] = {
   {"suspend", &suspend},
   {"resume", &resume},
   {"kill", &kill},
-  {"wipe", &wipe}
+  {"wipe", &wipe},
+  {"reboot", &reboot}
 };
 
 static int commandSize = sizeof(command) / sizeof(commandType);
@@ -519,7 +534,7 @@ bool readToken (char Buffer[], bool spacebreak) {
     if ((c == ' ' && spacebreak) || c == '\r' || c == '\n') {
       c = '\0';
       Buffer[i] = c;
-//      Serial.println(Buffer);
+      Serial.println(Buffer);
 
       return true;
     }
@@ -600,6 +615,25 @@ float popVal(int index) {
   }
 }
 
+void pushInt(int index, int integer) {
+    byte byte1 = lowByte(integer);
+    byte byte2 = highByte(integer);
+
+    pushByte(index, byte1);
+    pushByte(index, byte2);
+    pushByte(index, INT);
+}
+
+char* popString(int index) {
+    // assume that a variable of type STRINg is on stack
+    char* string;
+    byte size = popByte(index);
+    for (byte i = 0; i < size; i++) {
+        string = (char) popByte(index) + string;
+    }
+    return string;
+}
+
 // Function: readVal
 // Reads a value from the EEPROM and pushes it on the stack
 byte readVal(int index, int filePointer, byte Type) {
@@ -655,6 +689,81 @@ void binaryOp(int index, int op) {
 
 }
 
+int findFreeProcess() {
+    for(int i = 0; i < MAXPROCESSES; i++) {
+        if (process[i].state != RUNNING || process[i].state != PAUSED) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void fork(int index) {
+    int indexProcess = findFreeProcess();
+    if (indexProcess == -1) {
+        Serial.println("ERROR. Max no of processes reached. Max 10.");
+        return;
+    }
+
+    if (popByte(index) != STRING) {
+        Serial.println("ERROR! No program name found on the stack.");
+        return;
+    }
+
+    char* filename = popString(index);
+    int indexFile = locateFile(filename);
+
+    if(indexFile == -1) {
+        Serial.println("ERROR! Could not find file!");
+        return;
+    }
+
+    fileType file = readFATEntry(indexFile);
+
+    strcpy(process[indexProcess].name, file.name);
+    process[indexProcess].processId = indexProcess;
+    process[indexProcess].pc = file.start;
+    process[indexProcess].sp = 0;
+    process[indexProcess].state = RUNNING;
+
+    pushInt(index, process[indexProcess].processId);
+}
+
+void delayUntil(int index) {
+    if ((int) millis() < popVal(index)) {
+        process[index].pc--;
+    }
+    else {
+        popVal(index);
+    }
+}
+
+void printStack(int index) {
+    switch (process[index].stack[process[index].sp--]) {
+        case CHAR:
+            Serial.print((char) popVal(index));
+            break;
+        case INT:
+            Serial.print((int) popVal(index));
+            break;
+        case FLOAT:
+            Serial.print((float) popVal(index));
+            break;
+        case STRING:
+            Serial.print(popString(index));
+            break;
+        default:
+            Serial.print("Could not print the value on the stack: ");
+            Serial.println(process[index].stack[process[index].sp + 1]);
+            break;
+    }
+}
+
+void printlnStack(int index) {
+    printStack(index);
+    Serial.println();
+}
+
 // Function: execute
 // Executes the next step of the process
 void execute(int index) {
@@ -680,9 +789,23 @@ void execute(int index) {
     case TIMES:
       binaryOp(index, EEPROM[process[index].pc - 1]);
       break;
+    case FORK:
+      fork(index);
+      break;
+    case DELAYUNTIL:
+      delayUntil(index);
+      break;
+    case PRINT:
+      printStack(index);
+      break;
+    case PRINTLN:
+      printlnStack(index);
+      break;
+    case STOP:
+      break;
     default:
       Serial.print("Could not find the command ");
-      Serial.println(EEPROM[process[index].pc]);
+      Serial.println(EEPROM[process[index].pc - 1]);
       break;
   }
 }
@@ -828,10 +951,10 @@ void clearSerialBuffer() {
 // Called by Arduino to start program
 void setup() {
   Serial.begin(9600);
-//  Serial.println("ArduinoOS (Thijs Dregmans) version 4.0");
-//  Serial.println("Started. Waiting for commands...");
-//  Serial.println("Enter 'help' for help.");
-//
+  Serial.println("ArduinoOS (Thijs Dregmans) version 5.5 booted");
+  Serial.println("Started. Waiting for commands...");
+  Serial.println("Enter 'help' for help.");
+
   Serial.print("> ");
 }
 
