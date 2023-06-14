@@ -121,8 +121,8 @@ void store() {
   Buffer[0] = 0;
 
   if (noOfFiles >= FATSIZE) {
-    Serial.println("ERROR: Too much files. Max 10.");
-    Serial.println("Try 'files' to view all files.");
+    Serial.println(F("ERROR: Too much files. Max 10."));
+    Serial.println(F("Try 'files' to view all files."));
   }
   else {
     fileType file;
@@ -134,7 +134,7 @@ void store() {
 
     for (int FATEntryId = 0; FATEntryId < noOfFiles; FATEntryId++) {
       if (!strcmp(file.name, readFATEntry(FATEntryId).name)) {
-        Serial.println("file exists already");
+        Serial.println(F("file exists already"));
         return;
       }
     }
@@ -154,7 +154,7 @@ void store() {
 
     int emptySpaceStart = emptySpace(file.size);
     if (emptySpaceStart == -1) {
-      Serial.println("no space to store file");
+      Serial.println(F("no space to store file"));
       return;
     }
 
@@ -174,7 +174,7 @@ void store() {
     noOfFiles++;
 
     // print message
-    Serial.println("file stored successfully");
+    Serial.println(F("file stored successfully"));
 
     // clear buffer
     Buffer[0] = 0;
@@ -200,8 +200,8 @@ void retrieve() {
     Serial.println(" not found");
     return;
   }
-  Serial.println(" found");
-  Serial.println("content:");
+  Serial.println(F(" found"));
+  Serial.println(F("content:"));
 
   fileType file = readFATEntry(index);
 
@@ -228,10 +228,10 @@ void erase() {
   Serial.print(filename);
 
   if (index == -1) {
-    Serial.println(" not found");
+    Serial.println(F(" not found"));
     return;
   }
-  Serial.println(" found");
+  Serial.println(F(" found"));
 
   fileType file = readFATEntry(index);
 
@@ -241,7 +241,7 @@ void erase() {
     writeFAT(i, readFATEntry(i + 1));
   }
   Serial.print(filename);
-  Serial.println(" erased successfully");
+  Serial.println(F(" erased successfully"));
 
   // clear buffer
   Buffer[0] = 0;
@@ -250,14 +250,14 @@ void erase() {
 // Callable command: files
 // Prints a list with stored files on screen
 void files() {
-  Serial.println("This is a list with all files:");
-  Serial.println("    name                        size");
+  Serial.println(F("This is a list with all files:"));
+  Serial.println(F("    name                        size"));
   int counter = 0;
   for (int FATEntryId = 0; FATEntryId < noOfFiles; FATEntryId++) {
             if(readFATEntry(FATEntryId).size >= 0) {
-    Serial.print("    ");
+    Serial.print(F("    "));
     Serial.print(readFATEntry(FATEntryId).name);
-    Serial.print("                        ");
+    Serial.print(F("                        "));
     Serial.println(readFATEntry(FATEntryId).size);
     counter++;
             }
@@ -273,9 +273,9 @@ void freespace() {
   while (emptySpace(maxSize) != -1) {
     maxSize++;
   }
-  Serial.print("The biggest contiguous free memmory space is ");
+  Serial.print(F("The biggest contiguous free memmory space is "));
   Serial.print(maxSize);
-  Serial.println(" bytes.");
+  Serial.println(F(" bytes."));
 }
 
 // Callable command: run [file]
@@ -285,8 +285,8 @@ void run() {
   Buffer[0] = 0;
 
   if (noOfProcesses >= MAXPROCESSES) {
-    Serial.println("ERROR: Too much processes. Max 10.");
-    Serial.println("Try 'list' to view all processes.");
+    Serial.println(F("ERROR: Too much processes. Max 10."));
+    Serial.println(F("Try 'list' to view all processes."));
   }
   else {
     int processId = findFreeProcess();
@@ -660,13 +660,9 @@ void pushString(int index, char* s) {
 }
 
 char* popString(int index) {
-    // assume that a variable of type STRINg is on stack
-    char* string;
     byte size = popByte(index);
-    for (byte i = 0; i < size; i++) {
-        string = (char) popByte(index) + string;
-    }
-    return string;
+    process[index].sp -= size;
+    return (char *)(process[index].stack + process[index].sp);
 }
 
 // Function: readVal
@@ -789,7 +785,7 @@ void printStack(int index) {
             break;  
         default:
             Serial.print("Could not print the value on the stack: ");
-            Serial.println(process[index].stack[process[index].sp + 1]);
+            Serial.println(process[index].stack[process[index].sp]);
             break;
     }
 }
@@ -836,6 +832,7 @@ void delayTime(int index) {
 // Function: execute
 // Executes the next step of the process
 void execute(int index) {
+  Serial.print(EEPROM[process[index].pc]);
   switch (EEPROM[process[index].pc++]) {
     case CHAR:
       process[index].pc = readVal(index, process[index].pc, EEPROM[process[index].pc - 1]);
@@ -891,6 +888,7 @@ void execute(int index) {
     default:
       Serial.print("Could not find the command ");
       Serial.println(EEPROM[process[index].pc - 1]);
+      process[index].pc += readStr(index, process[index].pc);
       break;
   }
 }
@@ -900,6 +898,8 @@ void execute(int index) {
 void runProcess() {
   for (int processId = 0; processId < noOfProcesses; processId++) {
     if (process[processId].state == RUNNING) {
+//      Serial.print("execute ");
+//      Serial.println(processId);
       execute(processId);
     }
   }
@@ -941,9 +941,9 @@ int memoryEmptySpace(int varsize) {
 
 void saveVariable(byte name, int processId) {
     if (noOfVars >= MAXIMUMVAR) {
-        Serial.println("ERROR: Too much variables. Max 25.");
-        Serial.println("Try 'list' to view all processes.");
-        Serial.println("Kill a process that uses a variable to get access to one.");
+        Serial.println(F("ERROR: Too much variables. Max 25."));
+        Serial.println(F("Try 'list' to view all processes."));
+        Serial.println(F("Kill a process that uses a variable to get access to one."));
     }
     else {
         // delete var
@@ -1009,7 +1009,7 @@ int readVariable(byte name, int processId) {
             return 0;
         }
     }
-    Serial.println("ERROR! Could not find variable.");
+    Serial.println(F("ERROR! Could not find variable."));
     return 1;
 }
 
@@ -1036,9 +1036,9 @@ void clearSerialBuffer() {
 // Called by Arduino to start program
 void setup() {
   Serial.begin(9600);
-  Serial.println("ArduinoOS (Thijs Dregmans) version 5.5 booted");
-  Serial.println("Started. Waiting for commands...");
-  Serial.println("Enter 'help' for help.");
+  Serial.println(F("ArduinoOS (Thijs Dregmans) version 5.5 booted"));
+  Serial.println(F("Started. Waiting for commands..."));
+  Serial.println(F("Enter 'help' for help."));
 
   Serial.print("> ");
 }
@@ -1063,4 +1063,5 @@ void loop() {
 
     Serial.print("> ");
   }
+  runProcess();
 }
