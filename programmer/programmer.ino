@@ -3,7 +3,7 @@
    TINBES03
    programmer
    Student: Thijs Dregmans (1024272)
-   Version: 1.0
+   Version: 1.1
    Last edited: 2023-06-19
 
    This programmer converts one of the provided programs to bytecode and uploads it to the ArduinOS
@@ -23,6 +23,7 @@
 #define BUFSIZE 12
 #define FILENAMESIZE 12
 #define FATSIZE 10
+#define MAXBYTECODESIZE 50 // change this later
 
 // Define struct for commands
 typedef struct {
@@ -37,9 +38,23 @@ typedef struct {
     int size;
 } fileType;
 
+// Define struct for programs
+typedef struct {
+    char name[FILENAMESIZE];
+    int size;
+    byte bytecode[MAXBYTECODESIZE];
+} programType;
+
+
+// Array with programs
+static programType programs[] = {
+    {"hello", 17, {3, 72, 101, 108, 108, 111, 44, 32, 119, 111, 114, 108, 100, 10, 0, 51, 135}}
+};
+
 // Initialize global variables (counters)
 static int FileTypeSize = sizeof(fileType);
 EERef noOfFiles = EEPROM[0];
+static int noOfPrograms = sizeof(programs) / sizeof(programType);
 
 // Initialize global variables (memory)
 static char Buffer[BUFSIZE];
@@ -86,11 +101,18 @@ void upload() {
     
         // clear buffer
         Buffer[0] = 0;
+
+        int programId = locateProgram(file.name);
+
+        if (programId == -1) {
+            Serial.println(F("ERROR: Program not found!"));
+            return;
+        }
+        programType program = programs[programId];
+        
     
         // get file.size
-        while (!readToken(Buffer)) {
-            file.size = atoi(Buffer);
-        }
+        file.size = program.size;
     
         // clear buffer
         Buffer[0] = 0;
@@ -107,13 +129,8 @@ void upload() {
     
         writeFAT(noOfFiles, file);
     
-        char* content;
-        while (!readToken(Buffer, false)) {
-            content = Buffer;
-        }
-    
         for (int byteId = 0; byteId < file.size; byteId++) {
-            EEPROM[file.start + byteId] = content[byteId];
+            EEPROM[file.start + byteId] = program.bytecode[byteId];
         }
         noOfFiles++;
     
@@ -329,6 +346,24 @@ int locateFile(char* filename) {
     }
     return -1;
 }
+
+// Function: locateProgram
+// Searches the program in the program table and returns its index
+int locateProgram(char* filename) {
+    programType program;
+  
+    for (int programId = 0; programId < noOfPrograms; programId++) {
+        if (!strcmp(programs[programId].name, filename)) {
+            Serial.println(F("INFO: Program exists!"));
+            
+            return programId;
+        }
+    }
+    return -1;
+}
+
+
+
 void clearSerialBuffer() {
     delayMicroseconds(1024);
     while (Serial.available()) {
@@ -342,7 +377,7 @@ void clearSerialBuffer() {
 void setup() {
   
     Serial.begin(9600);
-    Serial.println(F("ArduinoOS programmer (Thijs Dregmans) version 1.0 booted"));
+    Serial.println(F("ArduinoOS programmer (Thijs Dregmans) version 1.1 booted"));
     Serial.println(F("Started. Waiting for commands..."));
     Serial.println(F("Enter 'help' for help."));
   
