@@ -3,8 +3,8 @@
    TINBES03
    ArduinOS
    Student: Thijs Dregmans (1024272)
-   Version: 5.5
-   Last edited: 2023-06-09
+   Version: 5.6
+   Last edited: 2023-06-19
 
    Requirements:
       Het besturingssysteem
@@ -197,7 +197,7 @@ void retrieve() {
   Serial.print(filename);
 
   if (index == -1) {
-    Serial.println(" not found");
+    Serial.println(F(" not found"));
     return;
   }
   Serial.println(F(" found"));
@@ -250,14 +250,14 @@ void erase() {
 // Callable command: files
 // Prints a list with stored files on screen
 void files() {
-  Serial.println(F("This is a list with all files:"));
-  Serial.println(F("    name                        size"));
+  Serial.println("This is a list with all files:");
+  Serial.println("    name                        size");
   int counter = 0;
   for (int FATEntryId = 0; FATEntryId < noOfFiles; FATEntryId++) {
             if(readFATEntry(FATEntryId).size >= 0) {
-    Serial.print(F("    "));
+    Serial.print("    ");
     Serial.print(readFATEntry(FATEntryId).name);
-    Serial.print(F("                        "));
+    Serial.print("                        ");
     Serial.println(readFATEntry(FATEntryId).size);
     counter++;
             }
@@ -273,9 +273,9 @@ void freespace() {
   while (emptySpace(maxSize) != -1) {
     maxSize++;
   }
-  Serial.print(F("The biggest contiguous free memmory space is "));
+  Serial.print("The biggest contiguous free memmory space is ");
   Serial.print(maxSize);
-  Serial.println(F(" bytes."));
+  Serial.println(" bytes.");
 }
 
 // Callable command: run [file]
@@ -285,8 +285,8 @@ void run() {
   Buffer[0] = 0;
 
   if (noOfProcesses >= MAXPROCESSES) {
-    Serial.println(F("ERROR: Too much processes. Max 10."));
-    Serial.println(F("Try 'list' to view all processes."));
+    Serial.println("ERROR: Too much processes. Max 10.");
+    Serial.println("Try 'list' to view all processes.");
   }
   else {
     int processId = findFreeProcess();
@@ -461,10 +461,6 @@ void reboot() {
 
 }
 
-void wipe() {
-    noOfFiles = 0;
-}
-
 // Array with callable commands
 static commandType command[] = {
   {"help", &help},
@@ -478,7 +474,6 @@ static commandType command[] = {
   {"suspend", &suspend},
   {"resume", &resume},
   {"kill", &kill},
-  {"wipe", &wipe},
   {"reboot", &reboot}
 };
 
@@ -659,8 +654,12 @@ void pushString(int index, char* s) {
     pushByte(index, STRING);
 }
 
-char* popString(int index) {
-    byte size = popByte(index);
+char *popString(int index) {
+    // assume that a variable of type STRINg is on stack
+    int size = popByte(index);
+    
+    Serial.println(size);
+//    Serial.println(size);
     process[index].sp -= size;
     return (char *)(process[index].stack + process[index].sp);
 }
@@ -684,14 +683,14 @@ byte readStr(int index, int fp) {
   // push it on stack
 
   byte size = 0;
-
+  
   do {
     pushByte(index, EEPROM[fp]);
     size++;
   } while (EEPROM[fp++]);
   pushByte(index, size);
   pushByte(index, STRING);
-
+  
   return size;
 }
 
@@ -713,7 +712,7 @@ void binaryOp(int index, int op) {
       break;
     default:
       Serial.println("ERROR");
-      Serial.println("binaryOp can only be called with a known operator");
+      Serial.println(F("binaryOp can only be called with a known operator"));
       break;
   }
   // push result on the stack
@@ -732,12 +731,12 @@ int findFreeProcess() {
 void fork(int index) {
     int indexProcess = findFreeProcess();
     if (indexProcess == -1) {
-        Serial.println("ERROR. Max no of processes reached. Max 10.");
+        Serial.println(F("ERROR. Max no of processes reached. Max 10."));
         return;
     }
 
     if (popByte(index) != STRING) {
-        Serial.println("ERROR! No program name found on the stack.");
+        Serial.println(F("ERROR! No program name found on the stack."));
         return;
     }
 
@@ -770,24 +769,25 @@ void delayUntil(int index) {
 }
 
 void printStack(int index) {
-    switch (process[index].stack[process[index].sp--]) {
-        case CHAR:
-            Serial.print((char) popVal(index));
-            break;
-        case INT:
-            Serial.print((int) popVal(index));
-            break;
-        case FLOAT:
-            Serial.print((float) popVal(index));
-            break;
-        case STRING:
+//    switch (process[index].stack[process[index].sp--]) {
+//        case CHAR:
+//            Serial.print((char) popVal(index));
+//            break;
+//        case INT:
+//            Serial.print((int) popVal(index));
+//            break;
+//        case FLOAT:
+//            Serial.print((float) popVal(index));
+//            break;
+//        case STRING:
+        process[index].sp--;
             Serial.print(popString(index));
-            break;  
-        default:
-            Serial.print("Could not print the value on the stack: ");
-            Serial.println(process[index].stack[process[index].sp]);
-            break;
-    }
+//            break;  
+//        default:
+//            Serial.print(F("Could not print the value on the stack: "));
+//            Serial.println(process[index].stack[process[index].sp + 1]);
+//            break;
+//    }
 }
 
 void printlnStack(int index) {
@@ -832,7 +832,6 @@ void delayTime(int index) {
 // Function: execute
 // Executes the next step of the process
 void execute(int index) {
-  Serial.print(EEPROM[process[index].pc]);
   switch (EEPROM[process[index].pc++]) {
     case CHAR:
       process[index].pc = readVal(index, process[index].pc, EEPROM[process[index].pc - 1]);
@@ -845,6 +844,7 @@ void execute(int index) {
       break;
     case STRING:
       process[index].pc += readStr(index, process[index].pc);
+      
       break;
     case PLUS:
       binaryOp(index, EEPROM[process[index].pc - 1]);
@@ -886,9 +886,8 @@ void execute(int index) {
       delayTime(index);
       break;
     default:
-      Serial.print("Could not find the command ");
+      Serial.print(F("Could not find the command "));
       Serial.println(EEPROM[process[index].pc - 1]);
-      process[index].pc += readStr(index, process[index].pc);
       break;
   }
 }
@@ -898,8 +897,6 @@ void execute(int index) {
 void runProcess() {
   for (int processId = 0; processId < noOfProcesses; processId++) {
     if (process[processId].state == RUNNING) {
-//      Serial.print("execute ");
-//      Serial.println(processId);
       execute(processId);
     }
   }
@@ -918,7 +915,7 @@ bool memorySpaceInUse(int addr) {
   }
   return false;
 }
-
+//
 // Function: memoryEmptySpace
 // Returns the first empty space where the var fits.
 int memoryEmptySpace(int varsize) {
@@ -971,7 +968,7 @@ void saveVariable(byte name, int processId) {
         // find empty space in memory to put variable
         int emptySpaceStart = memoryEmptySpace(var.size);
         if (emptySpaceStart == -1) {
-            Serial.println("no space to store variable");
+            Serial.println(F("no space to store variable"));
             return;
         }
     
@@ -1057,8 +1054,8 @@ void loop() {
     }
     Buffer[0] = 0;
     if (!oneCalled) {
-      Serial.println("ERROR: command not known");
-      Serial.println("Enter 'help' for help.");
+      Serial.println(F("ERROR: command not known"));
+      Serial.println(F("Enter 'help' for help."));
     }
 
     Serial.print("> ");
