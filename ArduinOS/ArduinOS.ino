@@ -3,7 +3,7 @@
    TINBES03
    ArduinOS
    Student: Thijs Dregmans (1024272)
-   Version: 5.6
+   Version: 5.7
    Last edited: 2023-06-19
 
    Requirements:
@@ -11,12 +11,12 @@
    Completed    - kan commando’s inlezen vanaf de command line via de seriële terminal.
    ---------    - kan programma’s in de voorgeschreven bytecode (opgeslagen als bestanden in het bestandssysteem) uitvoeren op de Arduino Uno of Nano.
    ---------    - beheert een geheugen van tenminste 256 bytes.
-   ---------    - kan tenminste 25 variabelen van het type CHAR (1 byte), INT (2 bytes), FLOAT (4 bytes) of STRING (zero-terminated, variabel aantal bytes) in het geheugen houden, waarvan de waarde gezet, gelezen en ge-muteerd kan worden.
+   ---------    - kan tenminste 25 variabelen van het type CHAR (1 byte), INT (2 bytes), FLOAT (4 bytes) of STRING (zero-terminated, variabel aantal bytes) in het geheugen houden, waarvan de waarde gezet, gelezen en gemuteerd kan worden.
    Completed    - beheert een bestandssysteem ter grootte van het beschikbare EEPROM-geheugen.
    Completed    - kan hierin tenminste 10 bestanden opslaan, teruglezen en wissen met bestandsnamen van maximaal 12 tekens (inclusief terminating zero).
    Completed    - kan de nog beschikbare hoeveelheid opslagruimte weergeven.
    Completed    - kan tot 10 verschillende processen bijhouden die gestart, gepauzeerd, hervat en beëindigd kunnen worden.
-   ---------    - houdt bij van alle variabelen bij welk proces ze horen, en geeft het geheugen dat de variabelen innemen vrij als het proces stopt.
+   Completed    - houdt bij van alle variabelen bij welk proces ze horen, en geeft het geheugen dat de variabelen innemen vrij als het proces stopt.
    ---------    - kan per proces 1 bestand tegelijk lezen of schrijven.
    Completed    - houdt per proces een stack bij van tenminste 32 bytes.
 
@@ -252,17 +252,13 @@ void erase() {
 void files() {
   Serial.println("This is a list with all files:");
   Serial.println("    name                        size");
-  int counter = 0;
   for (int FATEntryId = 0; FATEntryId < noOfFiles; FATEntryId++) {
-            if(readFATEntry(FATEntryId).size >= 0) {
     Serial.print("    ");
     Serial.print(readFATEntry(FATEntryId).name);
     Serial.print("                        ");
     Serial.println(readFATEntry(FATEntryId).size);
-    counter++;
-            }
   }
-  Serial.print(counter);
+  Serial.print(noOfFiles);
   Serial.println(" result(s)");
 }
 
@@ -574,7 +570,7 @@ void pushByte(int index, byte b) {
 // Function: popByte
 // Pops one byte from the stack of a process
 byte popByte(int index) {
-  return process[index].stack[process[index].sp--];
+  return process[index].stack[--process[index].sp];
   // check if decrement operator must be pre or post 'sp'
 }
 
@@ -657,9 +653,6 @@ void pushString(int index, char* s) {
 char *popString(int index) {
     // assume that a variable of type STRINg is on stack
     int size = popByte(index);
-    
-    Serial.println(size);
-//    Serial.println(size);
     process[index].sp -= size;
     return (char *)(process[index].stack + process[index].sp);
 }
@@ -769,25 +762,24 @@ void delayUntil(int index) {
 }
 
 void printStack(int index) {
-//    switch (process[index].stack[process[index].sp--]) {
-//        case CHAR:
-//            Serial.print((char) popVal(index));
-//            break;
-//        case INT:
-//            Serial.print((int) popVal(index));
-//            break;
-//        case FLOAT:
-//            Serial.print((float) popVal(index));
-//            break;
-//        case STRING:
-        process[index].sp--;
+    switch (process[index].stack[--process[index].sp]) {
+        case CHAR:
+            Serial.print((char) popVal(index));
+            break;
+        case INT:
+            Serial.print((int) popVal(index));
+            break;
+        case FLOAT:
+            Serial.print((float) popVal(index));
+            break;
+        case STRING:
             Serial.print(popString(index));
-//            break;  
-//        default:
-//            Serial.print(F("Could not print the value on the stack: "));
-//            Serial.println(process[index].stack[process[index].sp + 1]);
-//            break;
-//    }
+            break;  
+        default:
+            Serial.print(F("Could not print the value on the stack: "));
+            Serial.println(process[index].stack[process[index].sp + 1]);
+            break;
+    }
 }
 
 void printlnStack(int index) {
@@ -833,6 +825,7 @@ void delayTime(int index) {
 // Executes the next step of the process
 void execute(int index) {
   switch (EEPROM[process[index].pc++]) {
+    Serial.println(EEPROM[process[index].pc - 1]);
     case CHAR:
       process[index].pc = readVal(index, process[index].pc, EEPROM[process[index].pc - 1]);
       break;
@@ -1033,7 +1026,7 @@ void clearSerialBuffer() {
 // Called by Arduino to start program
 void setup() {
   Serial.begin(9600);
-  Serial.println(F("ArduinoOS (Thijs Dregmans) version 5.5 booted"));
+  Serial.println(F("ArduinoOS (Thijs Dregmans) version 5.7 booted"));
   Serial.println(F("Started. Waiting for commands..."));
   Serial.println(F("Enter 'help' for help."));
 
