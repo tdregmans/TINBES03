@@ -76,7 +76,6 @@ typedef struct {
     int processId;
     byte state;
     int pc;
-    int fp;
     int sp;
     byte stack[STACKSIZE];
 } processType;
@@ -669,17 +668,26 @@ char *popString(int index) {
 
 // Function: readVal
 // Reads a value from the EEPROM and pushes it on the stack
-byte readVal(int index, int filePointer, byte Type) {
+byte readVal(int index, int addr, byte Type) {
     for (byte i = 0; i < Type; i++) {
-        pushByte(index, EEPROM[filePointer++]); // does this increment the local variable or the value in the struct !?!?!
+        Serial.println(EEPROM[addr + i]);
+        pushByte(index, EEPROM[addr + i]);
     }
     pushByte(index, Type);
+     debugStack(index);
     return Type;
+}
+
+void debugStack(int index) {
+    for(int i = 0; i < process[index].sp -1; i++) {
+      Serial.print(" -> ");
+      Serial.println(process[index].stack[i]);
+    }
 }
 
 // Function: readStr
 // Reads a string from the EEPROM and pushes it on the stack
-byte readStr(int index, int fp) {
+byte readStr(int index, int pc) {
     // read # of bytes, associated with a process
     // defined by processId: index
   
@@ -688,9 +696,9 @@ byte readStr(int index, int fp) {
     byte size = 0;
     
     do {
-        pushByte(index, EEPROM[fp]);
+        pushByte(index, EEPROM[pc]);
         size++;
-    } while (EEPROM[fp++]);
+    } while (EEPROM[pc++]);
     
     pushByte(index, size);
     pushByte(index, STRING);
@@ -776,7 +784,9 @@ void printStack(int index) {
             Serial.print((char) popVal(index));
             break;
         case INT:
+            Serial.print("printing int");
             Serial.print((int) popVal(index));
+            
             break;
         case FLOAT:
             Serial.print((float) popVal(index));
@@ -831,27 +841,28 @@ void delayTime(int index) {
 // Function: execute
 // Executes the next step of the process
 void execute(int index) {
-    switch (EEPROM[process[index].pc++]) {
+//    Serial.println(EEPROM[process[index].pc]) ;
+    switch (EEPROM[process[index].pc]) {
       case CHAR:
-          process[index].pc = readVal(index, process[index].pc, EEPROM[process[index].pc - 1]);
+          process[index].pc += readVal(index, process[index].pc, EEPROM[process[index].pc]);
           break;
       case INT:
-          process[index].pc = readVal(index, process[index].pc, EEPROM[process[index].pc - 1]);
+          process[index].pc += readVal(index, process[index].pc, EEPROM[process[index].pc]);
           break;
       case FLOAT:
-          process[index].pc = readVal(index, process[index].pc, EEPROM[process[index].pc - 1]);
+          process[index].pc += readVal(index, process[index].pc, EEPROM[process[index].pc]);
           break;
       case STRING:
           process[index].pc += readStr(index, process[index].pc);
           break;
       case PLUS:
-          binaryOp(index, EEPROM[process[index].pc - 1]);
+          binaryOp(index, EEPROM[process[index].pc]);
           break;
       case MINUS:
-          binaryOp(index, EEPROM[process[index].pc - 1]);
+          binaryOp(index, EEPROM[process[index].pc]);
           break;
       case TIMES:
-          binaryOp(index, EEPROM[process[index].pc - 1]);
+          binaryOp(index, EEPROM[process[index].pc]);
           break;
       case GET:
           get(index);
@@ -872,6 +883,7 @@ void execute(int index) {
           delayUntil(index);
           break;
       case PRINT:
+          Serial.println("printing");
           printStack(index);
           break;
       case PRINTLN:
@@ -885,9 +897,10 @@ void execute(int index) {
           break;
       default:
           Serial.print(F("FATAL ERROR: Could not find the command "));
-          Serial.println(EEPROM[process[index].pc - 1]);
+          Serial.println(EEPROM[process[index].pc]);
           break;
     }
+    process[index].pc++;
 }
 
 // Function: runProcess

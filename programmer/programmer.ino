@@ -41,14 +41,15 @@ typedef struct {
 // Define struct for programs
 typedef struct {
     char name[FILENAMESIZE];
-    int size;
+    int size; 
     byte bytecode[MAXBYTECODESIZE];
 } programType;
 
 
 // Array with programs
 static programType programs[] = {
-    {"hello", 17, {3, 72, 101, 108, 108, 111, 44, 32, 119, 111, 114, 108, 100, 10, 0, 51, 135}}
+    {"hello", 17, {3, 72, 101, 108, 108, 111, 44, 32, 119, 111, 114, 108, 100, 10, 0, 51, 135}},
+    {"test_byte", 5, {2, 0, 5, 51, 135}}
 };
 
 // Initialize global variables (counters)
