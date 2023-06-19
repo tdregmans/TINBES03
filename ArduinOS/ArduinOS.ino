@@ -25,8 +25,7 @@
       - Check names of variables and functions
       - Provide comentary in functions
       - Change clear buffer command
-      - Jumps correction
-      - make it impossible to delete a file that is running a process
+      - FLOAT IEEE754 implementation
 */
 
 // Include libaries
@@ -173,8 +172,8 @@ void store() {
         noOfFiles++;
     
         // print message
-        Serial.println(F("INFO: File "));
-        Serial.println(file.name);
+        Serial.print(F("INFO: File "));
+        Serial.print(file.name);
         Serial.println(F(" is stored!"));
     
         // clear buffer
@@ -231,17 +230,26 @@ void erase() {
     }
   
     fileType file = readFATEntry(index);
-  
+
+    // check if file is running a process
+    for (int processId = 0; processId < noOfProcesses; processId++) {
+        if (process[processId].name == filename && process[processId].state) {
+            Serial.println(F("ERROR: File is running a process."));
+            return;
+        }
+    }
+    // doesnt work yet
+
+    // erase file
     noOfFiles--;
   
     for (int i = index; i < noOfFiles; i++) {
         writeFAT(i, readFATEntry(i + 1));
     }
   
-  
     // print message
-    Serial.println(F("INFO: File "));
-    Serial.println(file.name);
+    Serial.print(F("INFO: File "));
+    Serial.print(file.name);
     Serial.println(F(" is deleted!"));
   
     // clear buffer
