@@ -3,8 +3,8 @@
    TINBES03
    ArduinOS
    Student: Thijs Dregmans (1024272)
-   Version: 5.7
-   Last edited: 2023-06-19
+   Version: 6.0
+   Last edited: 2023-06-20
 
    Requirements:
       Het besturingssysteem
@@ -76,7 +76,6 @@ typedef struct {
     int processId;
     byte state;
     int pc;
-    int fp;
     int sp;
     byte stack[STACKSIZE];
 } processType;
@@ -669,17 +668,29 @@ char *popString(int index) {
 
 // Function: readVal
 // Reads a value from the EEPROM and pushes it on the stack
-byte readVal(int index, int filePointer, byte Type) {
+byte readVal(int index, int addr, byte Type) {
     for (byte i = 0; i < Type; i++) {
-        pushByte(index, EEPROM[filePointer++]); // does this increment the local variable or the value in the struct !?!?!
+        pushByte(index, EEPROM[addr + i]);
     }
     pushByte(index, Type);
     return Type;
+
 }
+
+void debugStack(int index) {
+    Serial.println("Stack debugger: ----");
+    for(int i = 0; i < process[index].sp -1; i++) {
+      Serial.print(" -> ");
+      Serial.println(process[index].stack[i]);
+    }
+    Serial.println("----");
+}
+
+
 
 // Function: readStr
 // Reads a string from the EEPROM and pushes it on the stack
-byte readStr(int index, int fp) {
+byte readStr(int index, int pc) {
     // read # of bytes, associated with a process
     // defined by processId: index
   
@@ -688,9 +699,9 @@ byte readStr(int index, int fp) {
     byte size = 0;
     
     do {
-        pushByte(index, EEPROM[fp]);
+        pushByte(index, EEPROM[pc]);
         size++;
-    } while (EEPROM[fp++]);
+    } while (EEPROM[pc++]);
     
     pushByte(index, size);
     pushByte(index, STRING);
@@ -771,20 +782,25 @@ void delayUntil(int index) {
 }
 
 void printStack(int index) {
-    switch (process[index].stack[--process[index].sp]) {
+    switch (popByte(index)) {
         case CHAR:
+            pushByte(index, CHAR);
             Serial.print((char) popVal(index));
             break;
         case INT:
+            pushByte(index, INT);
             Serial.print((int) popVal(index));
             break;
         case FLOAT:
+            pushByte(index, FLOAT);
             Serial.print((float) popVal(index));
             break;
         case STRING:
+            // pushByte not needed for STRING type
             Serial.print(popString(index));
             break;  
         default:
+            terminateProcess(index);
             Serial.print(F("FATAL ERROR: Could not print the value on the stack!"));
             break;
     }
@@ -831,15 +847,19 @@ void delayTime(int index) {
 // Function: execute
 // Executes the next step of the process
 void execute(int index) {
+    Serial.print("Executing command: ");
+    Serial.print(EEPROM[process[index].pc]);
+    Serial.print(" for process: ");
+    Serial.println(index);
     switch (EEPROM[process[index].pc++]) {
       case CHAR:
-          process[index].pc = readVal(index, process[index].pc, EEPROM[process[index].pc - 1]);
+          process[index].pc += readVal(index, process[index].pc, EEPROM[process[index].pc - 1]);
           break;
       case INT:
-          process[index].pc = readVal(index, process[index].pc, EEPROM[process[index].pc - 1]);
+          process[index].pc += readVal(index, process[index].pc, EEPROM[process[index].pc - 1]);
           break;
       case FLOAT:
-          process[index].pc = readVal(index, process[index].pc, EEPROM[process[index].pc - 1]);
+          process[index].pc += readVal(index, process[index].pc, EEPROM[process[index].pc - 1]);
           break;
       case STRING:
           process[index].pc += readStr(index, process[index].pc);
@@ -882,6 +902,10 @@ void execute(int index) {
           break;
       case DELAY:
           delayTime(index);
+          break;
+      case ENDLOOP:
+          Serial.println("ENDLOOP! Premature STOP called.");
+          terminateProcess(index);
           break;
       default:
           Serial.print(F("FATAL ERROR: Could not find the command "));
