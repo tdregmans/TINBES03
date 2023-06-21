@@ -3,8 +3,8 @@
    TINBES03
    ArduinOS
    Student: Thijs Dregmans (1024272)
-   Version: 6.0
-   Last edited: 2023-06-20
+   Version: 6.1
+   Last edited: 2023-06-21
 
    Requirements:
       Het besturingssysteem
@@ -636,6 +636,11 @@ void pushFloat(int index, float f) {
 
 void pushVal(int index, float value, int type) {
     switch (type) {
+        case CHAR:
+            pushByte(index, value);
+            pushByte(index, CHAR);
+            Serial.println("push CHAR");
+            break;
         case INT:
             pushInt(index, (int) value);
             break;
@@ -679,7 +684,8 @@ byte readVal(int index, int addr, byte Type) {
 
 void debugStack(int index) {
     Serial.println("Stack debugger: ----");
-    for(int i = 0; i < process[index].sp -1; i++) {
+    Serial.println(process[index].sp - 1);
+    for(int i = 0; i < process[index].sp - 1; i++) {
       Serial.print(" -> ");
       Serial.println(process[index].stack[i]);
     }
@@ -822,6 +828,7 @@ void terminateProcess(int processId) {
 }
 
 void get(int index) {
+    // read a variable name from the file, and push the variable value unto the stack
     char name = EEPROM[process[index].pc++];
     readVariable(name, index);
 }
@@ -832,7 +839,14 @@ void set(int index) {
 }
 
 void increment(int index) {
-    pushVal(index, popVal(index) + 1, process[index].stack[process[index].sp + 1]); // check for errors pls
+    Serial.print("increment stack value: type=");
+    byte type = popByte(index);
+    float value = popVal(index);
+    pushByte(index, type); // maybe delete this line
+    Serial.print(type);
+    Serial.print(", value=");
+    Serial.print(value);
+    pushVal(index, value + 1, type); // check for errors pls
 }
 
 void decrement(int index) {
@@ -847,10 +861,9 @@ void delayTime(int index) {
 // Function: execute
 // Executes the next step of the process
 void execute(int index) {
+    printVars();
     Serial.print("Executing command: ");
-    Serial.print(EEPROM[process[index].pc]);
-    Serial.print(" for process: ");
-    Serial.println(index);
+    Serial.println(EEPROM[process[index].pc]);
     switch (EEPROM[process[index].pc++]) {
       case CHAR:
           process[index].pc += readVal(index, process[index].pc, EEPROM[process[index].pc - 1]);
@@ -944,7 +957,7 @@ int memoryEmptySpace(int varsize) {
     int pointer = 0;
     int freespace = 0;
     do {
-        if (spaceInUse(pointer)) {
+        if (memorySpaceInUse(pointer)) {
             freespace = 0;
         }
         else {
@@ -956,6 +969,24 @@ int memoryEmptySpace(int varsize) {
         }
     } while (pointer < MEMORYSIZE);
     return -1;
+}
+
+void printVars() {
+    Serial.println("    name  type  processId   size  content");
+    for (int varId = 0; varId < noOfVars; varId++) {
+        Serial.print("    ");
+        Serial.print(memoryTable[varId].name);
+        Serial.print("    ");
+        Serial.print(memoryTable[varId].type);
+        Serial.print("    ");
+        Serial.print(memoryTable[varId].processId);
+        Serial.print("    ");
+        for (int byteId = 0; byteId < memoryTable[varId].size; byteId++) {
+            Serial.print(memory[memoryTable[varId].start + byteId]);
+            Serial.print(",");
+        }
+        Serial.println();
+    }
 }
 
 void saveVariable(byte name, int processId) {
@@ -980,6 +1011,7 @@ void saveVariable(byte name, int processId) {
         var.name = name;
         var.processId = processId;
         var.type = popByte(processId);
+        
         if (var.type == CHAR || var.type == INT || var.type == FLOAT) {
             var.size = var.type;
         }
@@ -987,6 +1019,7 @@ void saveVariable(byte name, int processId) {
             // pop size of STRING from stack
             var.size = popByte(processId);
         }
+        
         // find empty space in memory to put variable
         int emptySpaceStart = memoryEmptySpace(var.size);
         if (emptySpaceStart == -1) {
@@ -1000,6 +1033,16 @@ void saveVariable(byte name, int processId) {
             memory[var.start + byteId] = popByte(processId);
         }
         memoryTable[noOfVars++] = var;
+
+        // Debug print var
+        Serial.print("storing var: var.name=");
+        Serial.print(var.name);
+        Serial.print(", var.type=");
+        Serial.print(var.type);
+        Serial.print(", var.size=");
+        Serial.print(var.size);
+        Serial.print(", var.start=");
+        Serial.print(var.start);
     }
 }
 
@@ -1007,6 +1050,8 @@ int readVariable(byte name, int processId) {
     // read variable from memory and push it on the stack
     // return 0 -> pushed successfully
     // return 1 -> error
+    Serial.println("reading variable started");
+    debugStack(processId);
     for (int varId = 0; varId < noOfVars; varId++) {
         varType var = memoryTable[varId];
         if (var.name == name && var.processId == processId) {
@@ -1025,6 +1070,7 @@ int readVariable(byte name, int processId) {
                 pushByte(processId, var.size);
             }
             pushByte(processId, var.type);
+            debugStack(processId);
             return 0;
         }
     }
