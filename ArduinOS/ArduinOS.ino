@@ -28,6 +28,9 @@
       - FLOAT IEEE754 implementation
 */
 
+/* Initial variables and constants
+**************************************************************************************** */
+
 // Include libaries
 #include <EEPROM.h>
 #include <IEEE754tools.h>
@@ -93,6 +96,9 @@ varType memoryTable[MAXIMUMVAR];
 processType process[MAXPROCESSES];
 
 bool readToken (char Buffer[], bool spacebreak = true);
+
+/* Command Line Functions
+**************************************************************************************** */
 
 // Callable command: help
 // Prints information about available commands on screen
@@ -459,6 +465,8 @@ void kill() {
 
 void(* resetFunc) (void) = 0;  // declare reset fuction at address 0
 
+// Callable command: reboot
+// Calls function that points to begin of the program
 void reboot() {
     delay(10);
     resetFunc(); //call reset
@@ -481,6 +489,9 @@ static commandType command[] = {
 };
 
 static int commandSize = sizeof(command) / sizeof(commandType);
+
+/* EEPROM Memory management
+**************************************************************************************** */
 
 // Function: spaceInUse
 // Checks if a EEPROM byte is in use by any file.
@@ -516,30 +527,6 @@ int emptySpace(int filesize) {
     return -1;
 }
 
-// Function: readToken
-// Used to read a token from the buffer, enabling the program to have non-blocking input
-bool readToken (char Buffer[], bool spacebreak) {
-    int i = strlen(Buffer);
-    char c;
-    while (Serial.available()) {
-        c = Serial.read();
-    
-        if ((c == ' ' && spacebreak) || c == '\r' || c == '\n') {
-            c = '\0';
-            Buffer[i] = c;
-            Serial.println(Buffer);
-            // Disable the line above to disable printing of user input
-      
-            return true;
-        }
-    
-        Buffer[i] = c;
-        i++;
-    }
-    Buffer[i + 1] = '\0';
-    return false;
-}
-
 // Function: writeFAT
 // Puts the file in the File Allocation Table
 void writeFAT (int index, fileType file) {
@@ -569,6 +556,196 @@ int locateFile(char* filename) {
     return -1;
 }
 
+/* RAM Memory management
+**************************************************************************************** */
+
+// Function: memorySpaceInUse
+// Checks if the memory if byte is in use a variable.
+bool memorySpaceInUse(int addr) {
+    for (int varId = 0; varId < noOfVars; varId++) {
+        varType var;
+        var = memoryTable[varId];
+    
+        if (var.start <= addr && (var.start + var.size) > addr) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Function: memoryEmptySpace
+// Returns the first empty space where the var fits.
+int memoryEmptySpace(int varsize) {
+    int pointer = 0;
+    int freespace = 0;
+    do {
+        if (memorySpaceInUse(pointer)) {
+            freespace = 0;
+        }
+        else {
+            freespace++;
+        }
+        pointer++;
+        if (freespace >= varsize) {
+            return pointer - varsize;
+        }
+    } while (pointer < MEMORYSIZE);
+    return -1;
+}
+
+/* Read incomming char on Command Line
+**************************************************************************************** */
+
+// Function: readToken
+// Used to read a token from the buffer, enabling the program to have non-blocking input
+bool readToken (char Buffer[], bool spacebreak) {
+    int i = strlen(Buffer);
+    char c;
+    while (Serial.available()) {
+        c = Serial.read();
+    
+        if ((c == ' ' && spacebreak) || c == '\r' || c == '\n') {
+            c = '\0';
+            Buffer[i] = c;
+            Serial.println(Buffer);
+            // Disable the line above to disable printing of user input
+      
+            return true;
+        }
+    
+        Buffer[i] = c;
+        i++;
+    }
+    Buffer[i + 1] = '\0';
+    return false;
+}
+
+/* Elementary Variable Functions
+**************************************************************************************** */
+
+// Function: saveVariable
+// Saves a variable with name [name] for processId [processId] with the content and type from the stack
+void saveVariable(byte name, int processId) {
+    if (noOfVars >= MAXIMUMVAR) {
+        Serial.println(F("ERROR: Too much variables. Max 25."));
+        Serial.println(F("Try 'list' to view all processes."));
+        Serial.println(F("Kill a process that uses a variable to get access to one."));
+    }
+    else {
+        // delete var
+        for (int varId = 0; varId < noOfVars; varId++) {
+            if (memoryTable[varId].name == name && memoryTable[varId].processId == processId) {
+                for (int i = varId; i < noOfVars; i++) {
+                    memoryTable[i] = memoryTable[i + 1];
+                }
+                noOfVars--;
+                break;
+            }
+        }
+        // (re)create var
+        varType var;
+        var.name = name;
+        var.processId = processId;
+        var.type = popByte(processId);
+        
+        if (var.type == CHAR || var.type == INT || var.type == FLOAT) {
+            var.size = var.type;
+        }
+        else {
+            // pop size of STRING from stack
+            var.size = popByte(processId);
+        }
+        
+        // find empty space in memory to put variable
+        int emptySpaceStart = memoryEmptySpace(var.size);
+        if (emptySpaceStart == -1) {
+            Serial.println(F("ERROR: No space to store variable!"));
+            return;
+        }
+    
+        var.start = emptySpaceStart;
+
+        for (int byteId = 0; byteId < var.size; byteId++) {
+            memory[var.start + byteId] = popByte(processId);
+        }
+        memoryTable[noOfVars++] = var;
+
+        // Debug print var
+        Serial.print("storing var: var.name=");
+        Serial.print(var.name);
+        Serial.print(", var.type=");
+        Serial.print(var.type);
+        Serial.print(", var.size=");
+        Serial.print(var.size);
+        Serial.print(", var.start=");
+        Serial.print(var.start);
+    }
+}
+
+// Function: readVariable
+// Pushes the value of variable with name [name] on the stack
+int readVariable(byte name, int processId) {
+    // read variable from memory and push it on the stack
+    // return 0 -> pushed successfully
+    // return 1 -> error
+    Serial.println("reading variable started");
+    debugStack(processId);
+    for (int varId = 0; varId < noOfVars; varId++) {
+        varType var = memoryTable[varId];
+        if (var.name == name && var.processId == processId) {
+            if (var.type == CHAR || var.type == INT || var.type == FLOAT) {
+                for (int byteId = 0; byteId < var.size; byteId++) {
+                    pushByte(processId, memory[var.start + byteId]);
+                    // May need to be reversed: BIG OR LITTLE ENDIAN !?!?!
+                }
+            }
+            else {
+                // assume: var.type == STRING
+                for (int byteId = 0; byteId < var.size; byteId++) {
+                    pushByte(processId, memory[var.start + byteId]);
+                    // May need to be reversed: BIG OR LITTLE ENDIAN !?!?!
+                }
+                pushByte(processId, var.size);
+            }
+            pushByte(processId, var.type);
+            Serial.println(var.type);
+            debugStack(processId);
+            Serial.println("Var read");
+            return 0;
+        }
+    }
+    Serial.println(F("ERROR: Could not find variable!"));
+    return 1;
+}
+
+
+// Function: deleteVariables
+// Deletes all varaiables related to the process [processId]
+void deleteVariables(int processId) {
+    for (int varId = 0; varId < noOfVars; varId++) {
+        if (memoryTable[varId].processId == processId) {
+            for (int i = varId; i < noOfVars; i++) {
+                memoryTable[i] = memoryTable[i + 1];
+            }
+            noOfVars--;
+        }
+    }
+}
+
+/* Elementary Process Functions
+**************************************************************************************** */
+
+// Function: findFreProcess
+// Returns the index for a new process, or -1 if there is no space
+int findFreeProcess() {
+    for(int i = 0; i < MAXPROCESSES; i++) {
+        if (process[i].state != RUNNING && process[i].state != PAUSED) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 // Function: pushByte
 // Pushes one byte on the stack of a process
 void pushByte(int index, byte b) {
@@ -580,6 +757,42 @@ void pushByte(int index, byte b) {
 byte popByte(int index) {
     return process[index].stack[--process[index].sp];
     // check if decrement operator must be pre or post 'sp'
+}
+
+// Function: pushVal
+// Pushes value [value] unto the stack
+void pushVal(int index, float value, int type) {
+    switch (type) {
+        case CHAR:
+            pushByte(index, value);
+            pushByte(index, CHAR);
+            Serial.println("push CHAR");
+            break;
+        case INT:
+            byte b1 = lowByte((int) value);
+            byte b2 = highByte((int) value);
+            pushByte(index, b1);
+            pushByte(index, b2);
+            pushByte(index, INT);
+            break;
+        case FLOAT:
+            byte byte1 = 0x00;
+            byte byte2 = 0x00;
+            byte byte3 = 0x00;
+            byte byte4 = 0x00; // Not yet done
+
+            // apply IEEE-754 protocol
+            pushByte(index, byte1);
+            pushByte(index, byte2);
+            pushByte(index, byte3);
+            pushByte(index, byte4);
+            
+            pushByte(index, FLOAT);
+            break;
+        default:
+            Serial.println(F("FATAL ERROR: Could not push value on the stack!"));
+            break;
+    }
 }
 
 // Function: popVal
@@ -607,53 +820,14 @@ float popVal(int index) {
             // read 1 byte
             return popByte(index);
         // no default case 
-    }
-}
-
-void pushInt(int index, int i) {
-    byte byte1 = lowByte(i);
-    byte byte2 = highByte(i);
-
-    pushByte(index, byte1);
-    pushByte(index, byte2);
-    pushByte(index, INT);
-}
-
-void pushFloat(int index, float f) {
-    byte byte1 = 0x00;
-    byte byte2 = 0x00;
-    byte byte3 = 0x00;
-    byte byte4 = 0x00;
-
-    // apply IEEE-754 protocol
-    pushByte(index, byte1);
-    pushByte(index, byte2);
-    pushByte(index, byte3);
-    pushByte(index, byte4);
-    
-    pushByte(index, FLOAT);
-}
-
-void pushVal(int index, float value, int type) {
-    switch (type) {
-        case CHAR:
-            pushByte(index, value);
-            pushByte(index, CHAR);
-            Serial.println("push CHAR");
-            break;
-        case INT:
-            pushInt(index, (int) value);
-            break;
-        case FLOAT:
-            pushFloat(index, value);
-            break;
         default:
-            Serial.println(F("FATAL ERROR: Could not push value on the stack!"));
-            break;
+            Serial.println("ERROR! No type found on the stack!");
+            return;
     }
 }
 
-// function may not be needed
+// Function: pushString
+// Pushes a string [s] to the strack
 void pushString(int index, char* s) {
     int size = sizeof(s);
     for(int i = size; i == 0; i--) {
@@ -664,6 +838,8 @@ void pushString(int index, char* s) {
     pushByte(index, STRING);
 }
 
+// Function: popString
+// Pops the String from the stack of a process
 char *popString(int index) {
     // assume that a variable of type STRING is on stack
     int size = popByte(index);
@@ -681,18 +857,6 @@ byte readVal(int index, int addr, byte Type) {
     return Type;
 
 }
-
-void debugStack(int index) {
-    Serial.println("Stack debugger: ----");
-    Serial.println(process[index].sp - 1);
-    for(int i = 0; i < process[index].sp - 1; i++) {
-      Serial.print(" -> ");
-      Serial.println(process[index].stack[i]);
-    }
-    Serial.println("----");
-}
-
-
 
 // Function: readStr
 // Reads a string from the EEPROM and pushes it on the stack
@@ -714,6 +878,9 @@ byte readStr(int index, int pc) {
     
     return size;
 }
+
+/* Program Commands functions
+**************************************************************************************** */
 
 // Function: binaryOp
 // Perform a binary operation and push results on the stack
@@ -738,13 +905,33 @@ void binaryOp(int index, int op) {
     // push result on the stack
 }
 
-int findFreeProcess() {
-    for(int i = 0; i < MAXPROCESSES; i++) {
-        if (process[i].state != RUNNING && process[i].state != PAUSED) {
-            return i;
-        }
-    }
-    return -1;
+void get(int index) {
+    // read a variable name from the file, and push the variable value unto the stack
+    char name = EEPROM[process[index].pc++];
+    readVariable(name, index);
+}
+
+void set(int index) {
+    char name = EEPROM[process[index].pc++];
+    saveVariable(name, index);
+}
+
+void increment(int index) {
+    debugStack(index);
+    byte type = popByte(index);
+    pushByte(index, type);
+    float value = popVal(index);
+    
+    Serial.print("increment stack value: type=");
+    Serial.print(type);
+    Serial.print(", value=");
+    Serial.println(value);
+    debugStack(index);
+    pushVal(index, value + 1, type); // check for errors pls
+}
+
+void decrement(int index) {
+    pushVal(index, popVal(index) - 1, process[index].stack[process[index].sp + 1]); // check for errors pls
 }
 
 void fork(int index) {
@@ -775,7 +962,14 @@ void fork(int index) {
     process[indexProcess].sp = 0;
     process[indexProcess].state = RUNNING;
 
-    pushInt(index, process[indexProcess].processId);
+    // pushInt(index, process[indexProcess].processId);
+    // pushInt doesn't exist anymore, so execute lines beneath
+    // byte byte1 = lowByte((int) process[indexProcess].processId);
+    // byte byte2 = highByte((int) process[indexProcess].processId);
+    // 
+    // pushByte(index, byte1);
+    // pushByte(index, byte2);
+    // pushByte(index, INT);
 }
 
 void delayUntil(int index) {
@@ -827,36 +1021,13 @@ void terminateProcess(int processId) {
     deleteVariables(processId);
 }
 
-void get(int index) {
-    // read a variable name from the file, and push the variable value unto the stack
-    char name = EEPROM[process[index].pc++];
-    readVariable(name, index);
-}
-
-void set(int index) {
-    char name = EEPROM[process[index].pc++];
-    saveVariable(name, index);
-}
-
-void increment(int index) {
-    Serial.print("increment stack value: type=");
-    byte type = popByte(index);
-    float value = popVal(index);
-    pushByte(index, type); // maybe delete this line
-    Serial.print(type);
-    Serial.print(", value=");
-    Serial.print(value);
-    pushVal(index, value + 1, type); // check for errors pls
-}
-
-void decrement(int index) {
-    pushVal(index, popVal(index) - 1, process[index].stack[process[index].sp + 1]); // check for errors pls
-}
-
 void delayTime(int index) {
     int miliseconds = popVal(index);
     delay(miliseconds);
 }
+
+/* Execute function
+**************************************************************************************** */
 
 // Function: execute
 // Executes the next step of the process
@@ -937,39 +1108,9 @@ void runProcess() {
     }
 }
 
-// Function: memorySpaceInUse
-// Checks if the memory if byte is in use a variable.
-bool memorySpaceInUse(int addr) {
-    for (int varId = 0; varId < noOfVars; varId++) {
-        varType var;
-        var = memoryTable[varId];
-    
-        if (var.start <= addr && (var.start + var.size) > addr) {
-            return true;
-        }
-    }
-    return false;
-}
 
-// Function: memoryEmptySpace
-// Returns the first empty space where the var fits.
-int memoryEmptySpace(int varsize) {
-    int pointer = 0;
-    int freespace = 0;
-    do {
-        if (memorySpaceInUse(pointer)) {
-            freespace = 0;
-        }
-        else {
-            freespace++;
-        }
-        pointer++;
-        if (freespace >= varsize) {
-            return pointer - varsize;
-        }
-    } while (pointer < MEMORYSIZE);
-    return -1;
-}
+/* Debug help functions
+**************************************************************************************** */
 
 void printVars() {
     Serial.println("    name  type  processId   size  content");
@@ -989,113 +1130,18 @@ void printVars() {
     }
 }
 
-void saveVariable(byte name, int processId) {
-    if (noOfVars >= MAXIMUMVAR) {
-        Serial.println(F("ERROR: Too much variables. Max 25."));
-        Serial.println(F("Try 'list' to view all processes."));
-        Serial.println(F("Kill a process that uses a variable to get access to one."));
+void debugStack(int index) {
+    Serial.println("Stack debugger: ----");
+    Serial.println(process[index].sp - 1);
+    for(int i = 0; i < process[index].sp - 1; i++) {
+      Serial.print(" -> ");
+      Serial.println(process[index].stack[i]);
     }
-    else {
-        // delete var
-        for (int varId = 0; varId < noOfVars; varId++) {
-            if (memoryTable[varId].name == name && memoryTable[varId].processId == processId) {
-                for (int i = varId; i < noOfVars; i++) {
-                    memoryTable[i] = memoryTable[i + 1];
-                }
-                noOfVars--;
-                break;
-            }
-        }
-        // (re)create var
-        varType var;
-        var.name = name;
-        var.processId = processId;
-        var.type = popByte(processId);
-        
-        if (var.type == CHAR || var.type == INT || var.type == FLOAT) {
-            var.size = var.type;
-        }
-        else {
-            // pop size of STRING from stack
-            var.size = popByte(processId);
-        }
-        
-        // find empty space in memory to put variable
-        int emptySpaceStart = memoryEmptySpace(var.size);
-        if (emptySpaceStart == -1) {
-            Serial.println(F("ERROR: No space to store variable!"));
-            return;
-        }
-    
-        var.start = emptySpaceStart;
-
-        for (int byteId = 0; byteId < var.size; byteId++) {
-            memory[var.start + byteId] = popByte(processId);
-        }
-        memoryTable[noOfVars++] = var;
-
-        // Debug print var
-        Serial.print("storing var: var.name=");
-        Serial.print(var.name);
-        Serial.print(", var.type=");
-        Serial.print(var.type);
-        Serial.print(", var.size=");
-        Serial.print(var.size);
-        Serial.print(", var.start=");
-        Serial.print(var.start);
-    }
+    Serial.println("----");
 }
 
-int readVariable(byte name, int processId) {
-    // read variable from memory and push it on the stack
-    // return 0 -> pushed successfully
-    // return 1 -> error
-    Serial.println("reading variable started");
-    debugStack(processId);
-    for (int varId = 0; varId < noOfVars; varId++) {
-        varType var = memoryTable[varId];
-        if (var.name == name && var.processId == processId) {
-            if (var.type == CHAR || var.type == INT || var.type == FLOAT) {
-                for (int byteId = 0; byteId < var.size; byteId++) {
-                    pushByte(processId, memory[var.start + byteId]);
-                    // May need to be reversed: BIG OR LITTLE ENDIAN !?!?!
-                }
-            }
-            else {
-                // assume: var.type == STRING
-                for (int byteId = 0; byteId < var.size; byteId++) {
-                    pushByte(processId, memory[var.start + byteId]);
-                    // May need to be reversed: BIG OR LITTLE ENDIAN !?!?!
-                }
-                pushByte(processId, var.size);
-            }
-            pushByte(processId, var.type);
-            debugStack(processId);
-            return 0;
-        }
-    }
-    Serial.println(F("ERROR: Could not find variable!"));
-    return 1;
-}
-
-void deleteVariables(int processId) {
-    for (int varId = 0; varId < noOfVars; varId++) {
-        if (memoryTable[varId].processId == processId) {
-            for (int i = varId; i < noOfVars; i++) {
-                memoryTable[i] = memoryTable[i + 1];
-            }
-            noOfVars--;
-        }
-    }
-}
-
-void clearSerialBuffer() {
-    delayMicroseconds(1024);
-    while (Serial.available()) {
-        Serial.read();
-        delayMicroseconds(1024);
-    }
-}
+/* Setup of OS
+**************************************************************************************** */
 
 // Function: setup
 // Called by Arduino to start program
@@ -1108,6 +1154,10 @@ void setup() {
   
     Serial.print(F("> "));
 }
+
+
+/* MAIN FUNCTION: loop()
+**************************************************************************************** */
 
 // Function: loop
 // Called by Arduino repeatedly to run the program  
