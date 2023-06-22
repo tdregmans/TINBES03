@@ -25,7 +25,6 @@
       - Check names of variables and functions
       - Provide comentary in functions
       - Change clear buffer command
-      - FLOAT IEEE754 implementation
 */
 
 /* Initial variables and constants
@@ -655,17 +654,6 @@ void saveVariable(byte name, int processId) {
             // pop size of STRING from stack
             var.size = popByte(processId);
         }
-
-        
-        // Debug print var
-//        Serial.print("storing var: var.name=");
-//        Serial.print(var.name);
-//        Serial.print(", var.type=");
-//        Serial.print(var.type);
-//        Serial.print(", var.size=");
-//        Serial.print(var.size);
-//        Serial.print(", var.start=");
-//        Serial.print(var.start);
         
         // find empty space in memory to put variable
         int emptySpaceStart = memoryEmptySpace(var.size);
@@ -678,6 +666,9 @@ void saveVariable(byte name, int processId) {
 
         for (int byteId = 0; byteId < var.size; byteId++) {
             memory[var.start + byteId] = popByte(processId);
+            Serial.print(var.type);
+            Serial.print(" storeing in var->");
+            Serial.println(memory[var.start + byteId]);
         }
         memoryTable[noOfVars++] = var;
 
@@ -757,67 +748,6 @@ byte popByte(int index) {
     // decrement operator must be pre 'sp'
 }
 
-// Function: pushVal
-// Pushes value [value] unto the stack
-void pushVal(int index, float value, int type) {
-    switch (type) {
-        case CHAR:
-            pushByte(index, (int) value);
-            pushByte(index, CHAR);
-            Serial.print("push CHAR=");
-            Serial.println((int) value);
-            break;
-        case INT:
-            byte b1 = lowByte((int) value);
-            byte b2 = highByte((int) value);
-            pushByte(index, b1);
-            pushByte(index, b2);
-            pushByte(index, INT);
-            break;
-        case FLOAT:
-            
-        default:
-            Serial.println(F("FATAL ERROR: Could not push value on the stack!"));
-            break;
-    }
-}
-
-// Function: popVal
-// Pops the CHAR, INT or FLOAT from the stack of a process
-float popVal(int index) {
-    // assume that a variable of type INT, FLOAT or CHAR is on stack
-  
-    byte type = popByte(index);
-    Serial.print("type=");
-    Serial.println((int) type);
-    switch ((int) type) {
-        case INT:
-            // read 2 bytes -> big-endian
-            byte byte1 = popByte(index);
-            byte byte2 = popByte(index);
-      
-            return byte1 + (byte2 * 256);
-        case FLOAT:
-            // read 4 bytes
-            byte bytes[FLOAT];
-            for (int i = 0; i < FLOAT; i++) {
-              bytes[i] = popByte(index);
-            }
-      
-            return doublePacked2Float(bytes);
-        case CHAR:
-            // read 1 byte
-            byte x = popByte(index);
-            Serial.print("char=");
-            Serial.println(x);
-            return x;
-        // no default case 
-        default:
-            Serial.println("ERROR! No type found on the stack!");
-            return;
-    }
-}
-
 // Function: pushChar
 // Pushes a Char [c] to the strack
 void pushChar(int index, char c) {
@@ -835,8 +765,8 @@ char popChar(int index) {
 // Function: pushInt
 // Pushes a Int [c] to the strack
 void pushInt(int index, int i) {
-    pushByte(index, (byte) lowByte(i));
     pushByte(index, (byte) highByte(i));
+    pushByte(index, (byte) lowByte(i));
     pushByte(index, INT);
 }
 
@@ -844,22 +774,21 @@ void pushInt(int index, int i) {
 // Pops the Int from the stack of a process
 int popInt(int index) {
     popByte(index);
-    return popByte(index) + popByte(index) * 256;
+    return popByte(index) * 256 + popByte(index);
 }
 
 // Function: pushFloat
 // Pushes a Float [c] to the strack
-void pushFloat(int index, float x) {
-    byte byte1 = 0x00;
-    byte byte2 = 0x00;
-    byte byte3 = 0x00;
-    byte byte4 = 0x00; // Not yet done
-
-    // apply IEEE-754 protocol
-    pushByte(index, byte1);
-    pushByte(index, byte2);
-    pushByte(index, byte3);
-    pushByte(index, byte4);
+void pushFloat(int index, float f) {
+    // Source: https://stackoverflow.com/questions/63049683/arduino-convert-float-to-hex-ieee754-single-precision-32-bit
+    byte bytes[FLOAT];
+    
+    byte* f_byte = reinterpret_cast<byte*>(&f);
+    memcpy(bytes, f_byte, 4);
+    
+    for (int i = FLOAT - 1; i > -1; i--) {
+        pushByte(index, bytes[i]);
+    }
     
     pushByte(index, FLOAT);
 }
@@ -867,14 +796,17 @@ void pushFloat(int index, float x) {
 // Function: popFloat
 // Pops the Float from the stack of a process
 float popFloat(int index) {
+    // Source: https://forum.arduino.cc/t/8-bytes-to-double-conversion/952352/2
     popByte(index);
 
+    float f;
     byte bytes[FLOAT];
-    for (int i = 0; i < FLOAT; i++) {
-      bytes[i] = popByte(index);
+    for (int i = FLOAT - 1; i > -1; i--) {
+        bytes[i] = popByte(index);
     }
-
-    return doublePacked2Float(bytes);
+    memcpy (&f, bytes, 4);
+    
+    return f;
 }
 
 // Function: pushString
@@ -894,12 +826,8 @@ void pushString(int index, char* s) {
 char *popString(int index) {
     // assume that a variable of type STRING is on stack
     popByte(index);
-//    popByte(index);
-    debugStack(index);
     int size = popByte(index);
     process[index].sp -= size;
-    Serial.println(process[index].sp);
-    Serial.println(size);
     return (char *)(process[index].stack + process[index].sp - size -1);
 }
 
@@ -941,24 +869,60 @@ byte readStr(int index, int pc) {
 // Function: binaryOp
 // Perform a binary operation and push results on the stack
 void binaryOp(int index, int op) {
-    float y = popVal(index);
-    float x = popVal(index);
-    float result;
-    switch (op) {
-        case PLUS:
-            result = x + y;
-            break;
-        case MINUS:
-            result = x - y;
-            break;
-        case TIMES:
-            result = x * y;
-            break;
+    // define type somehow
+    byte type = popByte(index); // check this
+    switch (type) {
+        case INT:
+            int x = popInt(index);
+            int y = popInt(index);
+            int result;
+
+            // perform binary operation
+            switch (op) {
+                case PLUS:
+                    result = x + y;
+                    break;
+                case MINUS:
+                    result = x - y;
+                    break;
+                case TIMES:
+                    result = x * y;
+                    break;
+                default:
+                    Serial.println(F("FATAL ERROR: Binary operations can only be called with a known operator on the stack!"));
+                    return;
+            }
+
+            pushInt(index, result);
+            return;
+        case FLOAT:
+            float xf = popFloat(index);
+            float yf = popFloat(index);
+            float resultf;
+
+            // perform binary operation
+            switch (op) {
+                case PLUS:
+                    resultf = xf + yf;
+                    break;
+                case MINUS:
+                    resultf = xf - yf;
+                    break;
+                case TIMES:
+                    resultf = xf * yf;
+                    break;
+                default:
+                    Serial.println(F("FATAL ERROR: Binary operations can only be called with a known operator on the stack!"));
+                    return;
+            }
+
+            
+            pushFloat(index, resultf);
+            return;
         default:
-            Serial.println(F("FATAL ERROR: Binary operations can only be called with a known operator on the stack!"));
-            break;
+            Serial.println("ERROR! No type found on the stack to perform binary operation!");
+            return;
     }
-    // push result on the stack
 }
 
 void get(int index) {
@@ -976,7 +940,7 @@ void increment(int index) {
     byte type = popByte(index);
 //    pushByte(index, type); // push type back on the stack
 
-    switch ((int) type) {
+    switch (type) {
         case INT:
             pushInt(index, popInt(index) + 1);
             break;
@@ -996,7 +960,7 @@ void decrement(int index) {
      byte type = popByte(index);
 //    pushByte(index, type); // push type back on the stack
 
-    switch ((int) type) {
+    switch (type) {
         case INT:
             pushInt(index, popInt(index) - 1);
             break;
@@ -1044,11 +1008,11 @@ void fork(int index) {
 }
 
 void delayUntil(int index) {
-    if ((int) millis() < popVal(index)) {
+    if ((int) millis() < popInt(index)) {
         process[index].pc--;
     }
     else {
-        popVal(index);
+        popInt(index);
     }
 }
 
@@ -1056,21 +1020,20 @@ void printStack(int index) {
     Serial.println("printing result");
     switch (popByte(index)) {
         case CHAR:
-            pushByte(index, CHAR);
+            // pushByte not needed for CHAR type
             Serial.print((char) popChar(index));
             break;
         case INT:
-            pushByte(index, INT);
+            // pushByte not needed for INT type
             Serial.print((int) popInt(index));
             break;
         case FLOAT:
-            pushByte(index, FLOAT);
+            // pushByte not needed for FLOAT type
             Serial.print((float) popFloat(index));
             break;
         case STRING:
             // pushByte not needed for STRING type
             pushByte(index, STRING);
-            Serial.print("str");
             Serial.print((String) popString(index));
             break;  
         default:
@@ -1096,7 +1059,7 @@ void terminateProcess(int processId) {
 }
 
 void delayTime(int index) {
-    int miliseconds = popVal(index);
+    int miliseconds = popByte(index);
     delay(miliseconds);
 }
 
