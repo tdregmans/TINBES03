@@ -3,8 +3,8 @@
    TINBES03
    ArduinOS
    Student: Thijs Dregmans (1024272)
-   Version: 6.1
-   Last edited: 2023-06-21
+   Version: 6.2
+   Last edited: 2023-06-22
 
    Requirements:
       Het besturingssysteem
@@ -820,12 +820,17 @@ void pushString(int index, char* s) {
 
 // Function: popString
 // Pops the String from the stack of a process
-char *popString(int index) {
+String popString(int index) {
     // assume that a variable of type STRING is on stack
+    String s;
     popByte(index);
     int size = popByte(index);
-    process[index].sp -= size;
-    return (char *)(process[index].stack + process[index].sp - size - 1); // I don't understand why this (- size - 1) works
+
+    for (int i = 0; i < size; i++) {
+        s += (char) popByte(index);
+    }
+    
+    return s;
 }
 
 // Function: readVal
@@ -856,7 +861,7 @@ byte readStr(int index, int pc) {
     
     pushByte(index, size);
     pushByte(index, STRING);
-    debugStack(index);
+
     return size;
 }
 
@@ -1028,8 +1033,8 @@ void printStack(int index) {
             Serial.print((float) popFloat(index));
             break;
         case STRING:
-            pushByte(index, STRING);
-            Serial.print((String) popString(index));
+            // pushByte not needed for STRING type
+            Serial.print(popString(index));
             break;  
         default:
             terminateProcess(index);
@@ -1177,7 +1182,7 @@ void debugStack(int index) {
 void setup() {
   
     Serial.begin(9600);
-    Serial.println(F("ArduinoOS (Thijs Dregmans) version 5.7 booted"));
+    Serial.println(F("ArduinoOS (Thijs Dregmans) version 6.2 booted"));
     Serial.println(F("Started. Waiting for commands..."));
     Serial.println(F("Enter 'help' for help."));
   
