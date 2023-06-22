@@ -666,9 +666,6 @@ void saveVariable(byte name, int processId) {
 
         for (int byteId = 0; byteId < var.size; byteId++) {
             memory[var.start + byteId] = popByte(processId);
-            Serial.print(var.type);
-            Serial.print(" storeing in var->");
-            Serial.println(memory[var.start + byteId]);
         }
         memoryTable[noOfVars++] = var;
 
@@ -828,7 +825,7 @@ char *popString(int index) {
     popByte(index);
     int size = popByte(index);
     process[index].sp -= size;
-    return (char *)(process[index].stack + process[index].sp - size -1);
+    return (char *)(process[index].stack + process[index].sp - size - 1); // I don't understand why this (- size - 1) works
 }
 
 // Function: readVal
@@ -859,7 +856,7 @@ byte readStr(int index, int pc) {
     
     pushByte(index, size);
     pushByte(index, STRING);
-    
+    debugStack(index);
     return size;
 }
 
@@ -1017,7 +1014,6 @@ void delayUntil(int index) {
 }
 
 void printStack(int index) {
-    Serial.println("printing result");
     switch (popByte(index)) {
         case CHAR:
             // pushByte not needed for CHAR type
@@ -1032,7 +1028,6 @@ void printStack(int index) {
             Serial.print((float) popFloat(index));
             break;
         case STRING:
-            // pushByte not needed for STRING type
             pushByte(index, STRING);
             Serial.print((String) popString(index));
             break;  
