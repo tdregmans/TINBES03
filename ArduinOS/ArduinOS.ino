@@ -894,10 +894,13 @@ void pushString(int index, char* s) {
 char *popString(int index) {
     // assume that a variable of type STRING is on stack
     popByte(index);
+//    popByte(index);
+    debugStack(index);
     int size = popByte(index);
     process[index].sp -= size;
+    Serial.println(process[index].sp);
     Serial.println(size);
-    return (char *)(process[index].stack + process[index].sp);
+    return (char *)(process[index].stack + process[index].sp - size -1);
 }
 
 // Function: readVal
@@ -1009,34 +1012,34 @@ void decrement(int index) {
 }
 
 void fork(int index) {
-    int indexProcess = findFreeProcess();
-    if (indexProcess == -1) {
-        Serial.println(F("FATAL ERROR: Max no of processes reached! Could not fork."));
-        return;
-    }
-
-    if (popByte(index) != STRING) {
-        Serial.println(F("FATAL ERROR: No program name found on the stack to fork."));
-        return;
-    }
-
-    char* filename = popString(index);
-    int indexFile = locateFile(filename);
-
-    if(indexFile == -1) {
-        Serial.println(F("FATAL ERROR: Could not find file to fork."));
-        return;
-    }
-
-    fileType file = readFATEntry(indexFile);
-
-    strcpy(process[indexProcess].name, file.name);
-    process[indexProcess].processId = indexProcess;
-    process[indexProcess].pc = file.start;
-    process[indexProcess].sp = 0;
-    process[indexProcess].state = RUNNING;
-
-    pushInt(index, process[indexProcess].processId);
+//    int indexProcess = findFreeProcess();
+//    if (indexProcess == -1) {
+//        Serial.println(F("FATAL ERROR: Max no of processes reached! Could not fork."));
+//        return;
+//    }
+//
+//    if (popByte(index) != STRING) {
+//        Serial.println(F("FATAL ERROR: No program name found on the stack to fork."));
+//        return;
+//    }
+//
+//    char* filename = popString(index);
+//    int indexFile = locateFile(filename);
+//
+//    if(indexFile == -1) {
+//        Serial.println(F("FATAL ERROR: Could not find file to fork."));
+//        return;
+//    }
+//
+//    fileType file = readFATEntry(indexFile);
+//
+//    strcpy(process[indexProcess].name, file.name);
+//    process[indexProcess].processId = indexProcess;
+//    process[indexProcess].pc = file.start;
+//    process[indexProcess].sp = 0;
+//    process[indexProcess].state = RUNNING;
+//
+//    pushInt(index, process[indexProcess].processId);
 
 }
 
@@ -1067,7 +1070,8 @@ void printStack(int index) {
         case STRING:
             // pushByte not needed for STRING type
             pushByte(index, STRING);
-            Serial.print(popString(index));
+            Serial.print("str");
+            Serial.print((String) popString(index));
             break;  
         default:
             terminateProcess(index);
@@ -1083,9 +1087,9 @@ void printlnStack(int index) {
 
 void terminateProcess(int processId) {
     process[processId].state = TERMINATED;
-    Serial.print("INFO: Process ");
-    Serial.print(processId);
-    Serial.println(" terminated successfully!");
+    // Serial.print("INFO: Process ");
+    // Serial.print(processId);
+    // Serial.println(" terminated successfully!");
 
     // Delete all variables of the process
     deleteVariables(processId);
@@ -1199,8 +1203,8 @@ void printVars() {
 
 void debugStack(int index) {
     Serial.println("Stack debugger: ----");
-    Serial.println(process[index].sp - 1);
-    for(int i = 0; i < process[index].sp - 1; i++) {
+    Serial.println(process[index].sp);
+    for(int i = 0; i < process[index].sp; i++) {
       Serial.print(" -> ");
       Serial.println(process[index].stack[i]);
     }
