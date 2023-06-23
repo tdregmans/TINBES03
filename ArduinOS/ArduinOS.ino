@@ -80,7 +80,6 @@ typedef struct {
     int pc;
     int sp;
     byte stack[STACKSIZE];
-    byte loopAddr;
 } processType;
 
 // Initialize global variables (counters)
@@ -336,7 +335,6 @@ void run() {
         process[processId].state = RUNNING;
         process[processId].pc = file.start;
         process[processId].sp = 0;
-        process[processId].loopAddr = 0;
     
         noOfProcesses++;
     
@@ -743,10 +741,8 @@ void pushByte(int index, byte b) {
 // Function: popByte
 // Pops one byte from the stack of a process
 byte popByte(int index) {
-    if (process[index].sp > 0) {
-        return process[index].stack[--process[index].sp];
-        // decrement operator must be pre 'sp'
-    }
+    return process[index].stack[--process[index].sp];
+    // decrement operator must be pre 'sp'
 }
 
 // Function: pushChar
@@ -931,56 +927,6 @@ void binaryOp(int index, int op) {
     }
 }
 
-void stackValsEquals(int index) {
-    switch (popByte(index)) {
-        case CHAR: // stackValsEquals only tested for case INT
-            pushByte(index, CHAR);
-            char char1 = popChar(index);
-            popByte(index);
-            char char2 = popChar(index);
-
-            if (char1 == char2) {
-                pushByte(index, 0x01);
-            }
-            else {
-                pushByte(index, 0x00);
-            }
-            break;
-        case INT:
-            pushByte(index, INT);
-            int int1 = popInt(index);
-            popByte(index);
-            int int2 = popInt(index);
-            // for program 'test_fork': 
-            // NOTE: something goes wrong with reading of the INT.
-            // the program calls readVal to put the bytes in the EEPROM on the stack. Sometimes I use little endian, but sometimes big endian !!!
-
-            if (int1 == int2) {
-                pushByte(index, 0x01);
-            }
-            else {
-                pushByte(index, 0x00);
-            }
-            break;
-        case FLOAT: // stackValsEquals only tested for case INT
-            pushByte(index, FLOAT);
-            float float1 = popFloat(index);
-            popByte(index);
-            float float2 = popFloat(index);
-
-            if (float1 == float2) {
-                pushByte(index, 0x01);
-            }
-            else {
-                pushByte(index, 0x00);
-            }
-            break;
-         default:
-            Serial.println("ERROR! No value to compare for EQUAL!");
-            break;
-    }
-}
-
 void get(int index) {
     // read a variable name from the file, and push the variable value unto the stack
     char name = EEPROM[process[index].pc++];
@@ -1032,37 +978,34 @@ void decrement(int index) {
 }
 
 void fork(int index) {
-    Serial.println("FORKING");
-    int indexProcess = findFreeProcess();
-    if (indexProcess == -1) {
-        Serial.println(F("FATAL ERROR: Max no of processes reached! Could not fork."));
-        return;
-    }
-
-    if (popByte(index) != STRING) {
-        Serial.println(F("FATAL ERROR: No program name found on the stack to fork."));
-        return;
-    }
-
-    
-    char* filename = popString(index).c_str();
-    int indexFile = locateFile(filename);
-
-    Serial.println(filename);
-    if(indexFile == -1) {
-        Serial.println(F("FATAL ERROR: Could not find file to fork."));
-        return;
-    }
-
-    fileType file = readFATEntry(indexFile);
-
-    strcpy(process[indexProcess].name, file.name);
-    process[indexProcess].processId = indexProcess;
-    process[indexProcess].pc = file.start;
-    process[indexProcess].sp = 0;
-    process[indexProcess].state = RUNNING;
-
-    pushInt(index, process[indexProcess].processId);
+//    int indexProcess = findFreeProcess();
+//    if (indexProcess == -1) {
+//        Serial.println(F("FATAL ERROR: Max no of processes reached! Could not fork."));
+//        return;
+//    }
+//
+//    if (popByte(index) != STRING) {
+//        Serial.println(F("FATAL ERROR: No program name found on the stack to fork."));
+//        return;
+//    }
+//
+//    char* filename = popString(index);
+//    int indexFile = locateFile(filename);
+//
+//    if(indexFile == -1) {
+//        Serial.println(F("FATAL ERROR: Could not find file to fork."));
+//        return;
+//    }
+//
+//    fileType file = readFATEntry(indexFile);
+//
+//    strcpy(process[indexProcess].name, file.name);
+//    process[indexProcess].processId = indexProcess;
+//    process[indexProcess].pc = file.start;
+//    process[indexProcess].sp = 0;
+//    process[indexProcess].state = RUNNING;
+//
+//    pushInt(index, process[indexProcess].processId);
 
 }
 
@@ -1073,12 +1016,6 @@ void delayUntil(int index) {
     else {
         popInt(index);
     }
-}
-
-void pushMillis(int index) {
-    Serial.println("Pushing millis on the stack");
-    pushInt(index, millis());
-    debugStack(index);
 }
 
 void printStack(int index) {
@@ -1111,27 +1048,6 @@ void printlnStack(int index) {
     Serial.println();
 }
 
-void ifTrueStack(int index) {
-    popByte(index);
-    if(popByte(index)) {
-        Serial.println("True");
-        process[index].pc++;
-        
-    }
-    else {
-        Serial.println("False");
-        // read int from EEPROM
-        pushByte(index, EEPROM[process[index].pc++]);
-        int lengthOfTrueCode = (int) popByte(index);
-        process[index].pc += lengthOfTrueCode;
-    }
-} // not tested completely
-
-void endIf(int index) {
-    // manual says to remove the value from the stack! Which one?
-      debugStack(index);
-}
-
 void terminateProcess(int processId) {
     process[processId].state = TERMINATED;
     // Serial.print("INFO: Process ");
@@ -1145,15 +1061,6 @@ void terminateProcess(int processId) {
 void delayTime(int index) {
     int miliseconds = popByte(index);
     delay(miliseconds);
-}
-
-void startLoop(int index) {
-    process[index].loopAddr = process[index].pc;
-    Serial.println("Started LOOP");
-}
-
-void endLoop(int index) {
-    process[index].pc = process[index].loopAddr;
 }
 
 /* Execute function
@@ -1184,9 +1091,6 @@ void execute(int index) {
       case TIMES:
           binaryOp(index, EEPROM[process[index].pc - 1]);
           break;
-      case EQUALS:
-          stackValsEquals(index);
-          break;
       case GET:
           get(index);
           break;
@@ -1205,20 +1109,11 @@ void execute(int index) {
       case DELAYUNTIL:
           delayUntil(index);
           break;
-      case MILLIS:
-          pushMillis(index);
-          break;
       case PRINT:
           printStack(index);
           break;
       case PRINTLN:
           printlnStack(index);
-          break;
-      case IF:
-          ifTrueStack(index);
-          break;
-      case ENDIF:
-          endIf(index);
           break;
       case STOP:
           terminateProcess(index);
@@ -1226,11 +1121,9 @@ void execute(int index) {
       case DELAY:
           delayTime(index);
           break;
-      case LOOP:
-          startLoop(index);
-          break;
       case ENDLOOP:
-          endLoop(index);
+          Serial.println("ENDLOOP! Premature STOP called.");
+          terminateProcess(index);
           break;
       default:
           Serial.print(F("FATAL ERROR: Could not find the command "));
